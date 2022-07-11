@@ -1,0 +1,11 @@
+sunpos
+Sgp4
+moon2
+hh12
+ESPFlash
+AS5045_arduino_library-master
+Adafruit_BusIO
+NeoGPS
+Maidenhead
+Adafruit_GFX_Library
+LiquidCrystal_I2C
