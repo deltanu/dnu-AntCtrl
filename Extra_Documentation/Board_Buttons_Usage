@@ -3,12 +3,12 @@ There are two modes, the Main mode and the Config menu mode.
 Function buttons:
 Main Mode:
 - Shift -> A short press is shifting to the next object to track. The order of the tracking objects are: SUN, MOON, Sat1, Sat2, Sat3, Sat4, PARK.
-A long press (between 4 and 10 seconds press) exits the Main Mode and enters the Config Menu Mode.
+A long press (between 4 and 10 seconds press) exits the Main Mode and enters the two Config Menu Modes.
 - Plus (+) -> A short press is showing the QTH locator in Maidenhead grid format at the upper left of the LCD display (only applicable if a GPS is connected to the board).
 - Minus (-) -> (Not Used)
 - Auto -> A short press is starting the Automatic Tracking of the current object. If the object is not currently "visible" the tracking will start when it becomes visible. Another short press disables the Automatic tracking.
 
-Config Menu Mode:
+Config Menu Mode A:
 - Shift -> A short press is shifting between the configuration options. The order of the config options are:
           - AZ offset, 
           - El offset, 
@@ -16,13 +16,29 @@ Config Menu Mode:
           - Antenna speed (3 speeds using PWM), 
           - Tracking Accuracy (0.1 or 1 degrees),
           - Grid locator, 
-          - SAT1 Norad No, 
-          - SAT2 Norad No, 
-          - SAT3 Norad No, 
-          - SAT4 Norad No, 
+          - Antenna error timeout (in seconds),
           - Setting Time Manually.
-A long press (between 4 and 10 seconds press) exits the Config Menu Mode and goes back to the Main Mode.
+          
+A long press (between 3 and 10 seconds press) while in config menu mode A goes to the config menu mode B. 
 - Plus (+) -> Increases the value of the current position of the cursor.
 - Minus (-) -> Decreases the value of the current position of the cursor.
 - Auto -> A short press is moving the cursor to the next position. 
           A long press is storing the parameter value in the EEPROM. 
+
+Config Menu Mode B:
+- Shift -> A short press is shifting between the configuration options. The order of the config options are:
+          - SAT1 Norad No, 
+          - SAT2 Norad No, 
+          - SAT3 Norad No, 
+          - SAT4 Norad No,
+          - Encoder flag (SPI or RS485),
+          - Encoder AZ bits (12 or 14),
+          - Encoder EL bits (12 or 14),
+          - Option Reverse AZ
+          - Option Reverse EL
+
+A long press while in config menu B exits the Config Menu Mode and goes back to the Main Mode.
+- Plus (+) -> Increases the value of the current position of the cursor.
+- Minus (-) -> Decreases the value of the current position of the cursor.
+- Auto -> A short press is moving the cursor to the next position. 
+          A long press is storing the parameter value in the EEPROM.                     
