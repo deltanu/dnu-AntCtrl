@@ -9,3 +9,5 @@ NeoGPS
 Maidenhead
 Adafruit_GFX_Library
 LiquidCrystal_I2C
+AS5048A
+AS5048B
