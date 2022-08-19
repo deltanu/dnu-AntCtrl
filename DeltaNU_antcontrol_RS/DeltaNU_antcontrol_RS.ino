@@ -33,7 +33,8 @@
 //
 // Revision History of DeltaNU_antcontrol revision RS. (Separate PCB for the Absolute Encoders):
 // 1.09 - Adding easycomm II move commands ML (left), MR (right), MU (up), MD (down). Ignoring easycomm commands while auto tracking is enabled. 
-//          Correcting antErrorTimeout (TIME_STOP) usage retrieved from EEPROM
+//          Correcting antErrorTimeout (TIME_STOP) usage retrieved from EEPROM. Remove DEBUGs that caused conflicts on responses of easycomm protocol. 
+//          Disabled the obsolete serial_menu_motor_test() test function.
 // 1.08 - Moving the angles calculations before the funtion check_serial() so that the easycomm responses are aligned with the actual angles. 
 //        Consider satellite above horizon when obj_elev >= 0 (not >0). Do not clear the whole lcd when ther shift button is pressed (but only the 3rd and 4th line)
 // 1.07 - Moving the SAT TLEs from 1st menu to 2nd menu. Adding TIMEOUT_STOP parameter in 1st menu.
@@ -810,8 +811,10 @@ void serial_menu_motor_test(int read_input) {     // Temp function to test motor
     read_input = read_input; // char A-Z or LF
   }
   else {
+    #ifdef DEBUG
     Serial.print("Invalid command: ");
     Serial.println(read_input);
+    #endif
     return;
   }
     
@@ -840,9 +843,11 @@ void serial_menu_motor_test(int read_input) {     // Temp function to test motor
         park_state[0] = 0;  // To avoid continuing to park position
         break;
       case 65:  // A , start tracking
+        #ifdef DEBUG
         Serial.print("case_A: ");
         Serial.println(read_input);
         Serial.println("Start tracking!");
+        #endif
         tracking_state = 1;   // Enable tracking
         
         statusTrackingObject[0] = 1; // Enable current period azimuth tracking
@@ -851,12 +856,16 @@ void serial_menu_motor_test(int read_input) {     // Temp function to test motor
         func_track_object(obj_azim, obj_elev);
         break;
       case 69: // E
+        #ifdef DEBUG
         Serial.print("case_E: ");
         Serial.println(read_input);
+        #endif
         break;
       case 83: // S , Stop tracking
+        #ifdef DEBUG
         Serial.print("case_S: ");
         Serial.println(read_input);
+        #endif
         tracking_state = 0;   // Disable tracking
         if(moving_state[0] != 0) { // If azimuth Motor is already moving
           Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);   // third param 0 for azimuth motor
@@ -948,12 +957,14 @@ void check_serial() {
         
         // Serial.println("Command value request: ");
         // Serial.println(return_string);
-        Serial.printf("%s \n", return_string);
+        Serial.printf("%s\n", return_string);
       }
       // The following is temporary for test the OLD single char serial interface
       else {  // Single character command
-        Serial.print("check_serial(), Single Character command. ");
-        serial_menu_motor_test(control_port_buffer[0]);
+        #ifdef DEBUG
+          Serial.print("check_serial(), Single Character command. ");
+        #endif
+        // serial_menu_motor_test(control_port_buffer[0]);
       }
       // end of temporary test
       clear_command_buffer();
@@ -1405,7 +1416,9 @@ void process_easycom_command(byte * easycom_command_buffer, int easycom_command_
 // request_command from serial port, STOP motors or GOTO command
 void request_command(String axis, String request, float parm_degrees) {
   if(tracking_state != 0) {   // Ignore the command when auto tracking is enabled. It must been disabled first.
-    Serial.println(" ???Auto tracking is enabled, ignoring easycomm command. ");
+    #ifdef DEBUG
+      Serial.println(" ???Auto tracking is enabled, ignoring easycomm command. ");
+    #endif
 /*    tracking_state = 0; // Disable tracking
     if(moving_state[0] != 0) {    // If Az Motor is already moving
        Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);  // Stop the motor
@@ -5793,11 +5806,11 @@ void setup()
   #ifdef ENABLE_ELEVATION
     motor_init(MOTOR_EL1_PIN, MOTOR_EL2_PIN, pwmChanEl); // Init EL motor
   #endif
-  init_test_motor();    // TEMP!!!
+  // init_test_motor();    // TEMP!!!
 
   clear_lcd();
 
-  Serial.print("End setup");
+  Serial.println("End setup");
 }
 
 int  input = 0;   // TEMP!!!
@@ -6283,9 +6296,9 @@ void loop()
               goto_state[1] = 0;
             #endif
             tracking_state = 0;   // Disable auto tracking
-            //#ifdef DEBUG
+            #ifdef DEBUG
               Serial.println(" ???ERROR: Check Az Motor or Az Encoder!!!");
-            //#endif
+            #endif
             lcd_showError(0);
           }    
         }
@@ -6334,9 +6347,9 @@ void loop()
               goto_state[1] = 0;
             #endif
             tracking_state = 0;   // Disable auto tracking
-            //#ifdef DEBUG
+            #ifdef DEBUG
               Serial.println(" ???ERROR: Check EL Motor or EL Encoder!!!");
-            //#endif
+            #endif
             lcd_showError(1);
           }
         }
