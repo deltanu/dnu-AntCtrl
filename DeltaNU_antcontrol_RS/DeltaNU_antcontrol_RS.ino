@@ -403,19 +403,19 @@ Adafruit_SSD1306 display(OLED_RESET);
 */
 
 // For ENCODER_FLAG parameter
-const int encoderFlag[2] = {0, 1}; // 0: SPI, 1:RS485
+const String encoderFlag[2] = {"SPI", "RS485"}; // 0: SPI, 1:RS485
 int encoderFlagInd = ENCODER_FLAG;
 char tmp_encoderFlag;
 char encoderFlag_mem;
 
 // For ENCODER_AZ_BITS parameter
-const int encoderAzBits[2] = {0, 1};    // 0:12-bit, 1:14-bit
+const String encoderAzBits[2] = {"12-bit", "14-bit"};    // 0:12-bit, 1:14-bit
 int encoderAzBitsInd = ENCODER_AZ_BITS;
 char tmp_encoderAzBits;
 char encoderAzBits_mem;
 
 // For ENCODER_EL_BITS parameter
-const int encoderElBits[2] = {0, 1};    // 0:12-bit, 1:14-bit
+const String encoderElBits[2] = {"12-bit", "14-bit"};    // 0:12-bit, 1:14-bit
 int encoderElBitsInd = ENCODER_EL_BITS;
 char tmp_encoderElBits;
 char encoderElBits_mem;
@@ -2584,7 +2584,6 @@ void init_lcd() {
   lcd.setCursor(0,2); // 3rd line
   lcd.print(" QTH loc: ");
   lcd.print(grid);
-
   delay(3000);
   
 }
@@ -2606,7 +2605,41 @@ void init_lcd2() {
   lcd.print(" Ant Speed: ");
   lcd.print(indexDC_mem);
   delay(3000);
-  
+}
+
+void init_lcd3() {
+  Serial.println("Setup initial display 3");
+  clear_lcd();
+  lcd.setCursor(0,0); // 1st line
+  lcd.print(" Encoder: ");
+  lcd.print(encoderFlag[encoderFlagInd]);
+  lcd.setCursor(0,1); // 2nd line
+  if(encoderFlagInd == 0) {
+    lcd.print(" AZ: HH-12");
+  }
+  else {
+    lcd.print(" AZ: ");
+    lcd.print(encoderAzBits[encoderAzBitsInd]);
+  }
+  lcd.setCursor(0,2); // 3rd line
+  if(encoderFlagInd == 0) {
+    lcd.print(" EL: HH-12");
+  }
+  else {
+    lcd.print(" EL: ");
+    lcd.print(encoderElBits[encoderElBitsInd]);
+  }
+  lcd.setCursor(0,3); // 4th line
+  lcd.print(" Track accu: ");
+  int asciiSym = 223;  // Ascii code for Degree symbol
+  if(trackAccuInd == 0) {
+    lcd.print("0.1"); 
+  }
+  else {
+    lcd.print("1");
+  }
+  lcd.print(char(asciiSym));
+  delay(3000);
 }
 
 
@@ -5695,6 +5728,7 @@ void setup()
   Serial.printf("Retrieved the encoderFlag_mem [%d] from memory. encoderFlagInd is [%d]\n", encoderFlag_mem, encoderFlagInd);
   if(encoderFlagInd >= 0 && encoderFlagInd <=1) {
     Serial.printf("encoderFlagInd is valid\n");
+    Serial.printf("encoderFlag[%d] is: %s\n", encoderFlagInd, encoderFlag[encoderFlagInd]);
   }
   else {
     Serial.println("Error on retrieving encoderFlagInd");
@@ -5706,17 +5740,19 @@ void setup()
   Serial.printf("Retrieved the encoderAzBits_mem [%d] from memory. encoderAzBitsInd is [%d]\n", encoderAzBits_mem, encoderAzBitsInd);
   if(encoderAzBitsInd >= 0 && encoderAzBitsInd <=1) {
     Serial.printf("encoderAzBitsInd is valid\n");
+    Serial.printf("encoderAzBits[%d] is: %s\n", encoderAzBitsInd, encoderAzBits[encoderAzBitsInd]);
   }
   else {
     Serial.println("Error on retrieving encoderAzBitsInd");
   }
 
   // read the stored ENCODER_EL_BITS from memory (0:12-bits, 1:14-bits)
-  encoderElBits_mem = preferences.getChar("encoder_El_bits", '0');   // Default is '0' (ascii 48)
+  encoderElBits_mem = preferences.getChar("encoder_el_bits", '0');   // Default is '0' (ascii 48)
   encoderElBitsInd = encoderElBits_mem - '0';
   Serial.printf("Retrieved the encoderElBits_mem [%d] from memory. encoderElBitsInd is [%d]\n", encoderElBits_mem, encoderElBitsInd);
   if(encoderElBitsInd >= 0 && encoderElBitsInd <=1) {
     Serial.printf("encoderElBitsInd is valid\n");
+    Serial.printf("encoderElBits[%d] is: %s\n", encoderElBitsInd, encoderElBits[encoderElBitsInd]);
   }
   else {
     Serial.println("Error on retrieving encoderElBitsInd");
@@ -5784,6 +5820,7 @@ void setup()
   init_lcd();
   Serial.printf(" Code Version: %s \n", CODE_VERSION);
   init_lcd2();
+  init_lcd3();
 
   ////pinMode(ledPin, OUTPUT); // visual signal of I/O to chip: heartbeat
   ////pinMode(clockPin, OUTPUT); // SCK HSPI
