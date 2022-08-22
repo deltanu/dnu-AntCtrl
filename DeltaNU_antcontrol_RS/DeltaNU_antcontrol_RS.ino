@@ -32,6 +32,7 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol revision RS. (Separate PCB for the Absolute Encoders):
+// 1.10 - When antenna is moving by easycomm commands, stop if the AZ and/or angles from encoders reach the AZ/EL min or max limits.
 // 1.09 - Adding easycomm II move commands ML (left), MR (right), MU (up), MD (down). Ignoring easycomm commands while auto tracking is enabled. 
 //          Correcting antErrorTimeout (TIME_STOP) usage retrieved from EEPROM. Remove DEBUGs that caused conflicts on responses of easycomm protocol. 
 //          Disabled the obsolete serial_menu_motor_test() test function.
@@ -115,7 +116,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 
-#define CODE_VERSION "1.09"
+#define CODE_VERSION "1.10"
 
 #include <string.h>
 #include "FS.h"
@@ -6267,7 +6268,7 @@ void loop()
       }   // End if(nTP_flag == true || gPS_flag == true) 
     }   // End Main function
   
-    if(tracking_state != 0) {
+//    if(tracking_state != 0) {
       float l_floatAZ, l_floatEL;
       if (encoderFlagInd == 1) {
         l_floatAZ = azg;
@@ -6277,9 +6278,10 @@ void loop()
         l_floatAZ = az_floatAngle;
         l_floatEL = el_floatAngle;
       }
-      // if (az_floatAngle > float(ANT_AZ_MIN) && az_floatAngle < float(ANT_AZ_MAX) && el_floatAngle > float(ANT_EL_MIN) && el_floatAngle < float(ANT_EL_MAX)) {
       if (l_floatAZ > float(ANT_AZ_MIN) && l_floatAZ < float(ANT_AZ_MAX) && l_floatEL > float(ANT_EL_MIN) && l_floatEL< float(ANT_EL_MAX)) {
-        func_track_object(obj_azim, obj_elev);
+        if(tracking_state != 0) {
+          func_track_object(obj_azim, obj_elev);
+        }
       }
       else {
         #ifdef DEBUG
@@ -6297,7 +6299,7 @@ void loop()
           }
         #endif
       }
-    }
+//    }
 
     // Check if absolute encoder value changes while motor is moving.
     // If angle does not change and the timeout is reached then stop the motors (to avoid any damage in the system)
