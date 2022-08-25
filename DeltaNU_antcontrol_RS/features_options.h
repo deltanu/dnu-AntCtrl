@@ -11,6 +11,7 @@
 #define DEFAULT_GRID "JO99AH"		// Maidenhead grid Stockholm
 #define DEFAULT_LATITUDE 59.3293	// Latitude Stockholm
 #define DEFAULT_LONGITUDE 18.0686	// Longitude Stockholm
+#define DEFAULT_ALTITUDE 40       // Altitude Stockholm in meters
 
 #define TIMEZONE 1    // UTC+1
 

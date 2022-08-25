@@ -1,4 +1,4 @@
-// DeltaNU antenna control arduino sw for ESP32 (by SV1DNU/SA0DNU)
+// DeltaNU antenna control arduino sw for ESP32 by SV1DNU/SA0DNU, 2021-2022.
 // Filename: DeltaNU_antcontrol.ino
 // The inspiration of this project was initiated by the excellent oe5jfl antenna controller. But wanted to add more features, so it was decided to use the ESP32 microcontroller.
 // Example codes by K3NG rotator controller, ON4CDU Remote Sensor boards, alex_chang satellite tracker, SlashDevin GPS library have been considered.
@@ -32,6 +32,8 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol revision RS. (Separate PCB for the Absolute Encoders):
+// 1.11 - [2022-08-25] Bug fix: If GPS is available call sat.site() function after fetching the gps latitude/longitude for updating the orbital satellite data. 
+//          Use fetched altitude from gps for orbital satellite data.
 // 1.10 - When antenna is moving by easycomm commands, stop if the AZ and/or angles from encoders reach the AZ/EL min or max limits.
 // 1.09 - Adding easycomm II move commands ML (left), MR (right), MU (up), MD (down). Ignoring easycomm commands while auto tracking is enabled. 
 //          Correcting antErrorTimeout (TIME_STOP) usage retrieved from EEPROM. Remove DEBUGs that caused conflicts on responses of easycomm protocol. 
@@ -116,7 +118,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 
-#define CODE_VERSION "1.10"
+#define CODE_VERSION "1.11"
 
 #include <string.h>
 #include "FS.h"
@@ -228,7 +230,7 @@ using namespace std;
 vector<String> myvector;
 
 // float myLat = 59.3293; float myLong = 18.0686; 
-float myAlt = 10;   // My location altitude.
+float myAlt = DEFAULT_ALTITUDE;   // My location altitude.
 const int numSats = 4;    // Number of satellites to track.
 Sgp4 sat;
 char satID[4][6] = {"07530", "25544", "24278", "43700"};  // Default satellites
@@ -5385,6 +5387,15 @@ static void doSomeWork()
 
     latitude = fix.latitude();    // Assign the latitude of GPS
     longitude = fix.longitude();    // Assign the longitude of GPS
+
+    if (fix.valid.altitude) {
+      #ifdef DEBUG
+        Serial.printf("fix.altitude(): %f\n", fix.altitude());
+      #endif
+      myAlt = fix.altitude();
+    }
+    
+    sat.site(latitude,longitude,myAlt); // For satellites orbital data
     udtLocation.dLatitude = latitude;
     udtLocation.dLongitude = longitude;
     char* locator=get_mh(latitude, longitude, 6);
