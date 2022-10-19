@@ -32,6 +32,11 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol revision RS. (Separate PCB for the Absolute Encoders):
+// 1.16 - [2022-10-17] Setting Parking Position in the menu and store it in EEPROM.
+// 1.15 - [2022-10-11] Setting the Antenna AZ, EL min/max limits from the menu_A and storing the values in the EEPROM.
+// 1.14 - [2022-10-08] Setting the Band (Freq) via the 2nd menu and storing it in the EEPROM. The Band parameter is needed for calculating the doppler. 
+// 1.13	- [2022-10-07] Replacing library moon2 to moonLib and adding the functions MoonDop, geocentric, dot, toxyz and fromxyz so that the doppler can be calculated. 
+//          Replacing obsolete function getMoonPos() to getMoonPosAndDoppler() to show the self-doppler when the object is moon.
 // 1.12 - [2022-09-20] Track Accuracy extended to three choices. 0.1' , 0.5' or 1 degree.
 // 1.11 - [2022-08-25] Bug fix: If GPS is available call sat.site() function after fetching the gps latitude/longitude for updating the orbital satellite data. 
 //          Use fetched altitude from gps for orbital satellite data.
@@ -119,7 +124,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 
-#define CODE_VERSION "1.12"
+#define CODE_VERSION "1.16"
 
 #include <string.h>
 #include "FS.h"
@@ -201,7 +206,8 @@ static gps_fix  fix;
 #include "sunpos.h"
 #include <math.h>
 // For Moon position
-#include <moon2.h>
+//#include <moon2.h>
+#include <moonLib.h>
 // For Satellite tracking
 #include <Sgp4.h>
 // For NTP server connection
@@ -295,8 +301,8 @@ const int buttonShiftPin = SHIFT_PIN; // See definition in features_options.h
 int trackingObject = 0; // Used to select the object (Sun or Moon) for tracking. 0 = Sun, 1 = Moon
 int objectState = 0; // Default is 0 (the Sun)
 
-const int maxMenuObj = 7;   // Max number of menu_A configs (First is zero).
-const int maxMenuObjB = 8;   // Max number of menu_B configs (First is zero).
+const int maxMenuObj = 10;   // Max number of menu_A configs (First is zero).
+const int maxMenuObjB = 9;   // Max number of menu_B configs (First is zero).
 int menuObject = 0;   // Used to select the object within the menu config. 
 
 // Definitions for Shift button
@@ -380,6 +386,10 @@ float sun_azim = 0;
 float sun_elev = 0;
 double moon_azimuth = 0;
 double moon_elevation = 0;
+double Doppler = 0;
+double Band = 1296.1;   // Default is the 23cm band 
+const double freqBand[9] = {144.1, 432.1, 1296.1, 2304.1, 2320.1, 3400.1, 5760.1, 10368.1, 24048.1};
+int freqBandInd = 2;    // Default is the 23cm band 
 
 float obj_azim = 0;
 float obj_elev = 0;
@@ -436,6 +446,7 @@ int reverseElInd = OPTION_REVERSE_EL;
 char tmp_reverseEl;
 char reverseEl_mem;
 
+// For TRACK_FREQ
 int int_trackFreq = TRACK_FREQ;
 char trackFreq[4] = "";
 char tmp_trackFreq[4] = "";
@@ -446,6 +457,42 @@ int int_antErrorTimeout = TIMEOUT_STOP;
 char antErrorTimeout[3] = "";
 char tmp_antErrorTimeout[3] = "";
 String antErrorTimeout_mem = "";
+
+// For ANT_AZ_MIN Limit
+int int_antAzMin = ANT_AZ_MIN;
+char antAzMin[4] = "";
+char tmp_antAzMin[4] = "";
+String antAzMin_mem = "";
+
+// For ANT_AZ_MAX Limit
+int int_antAzMax = ANT_AZ_MAX;
+char antAzMax[4] = "";
+char tmp_antAzMax[4] = "";
+String antAzMax_mem = "";
+
+// For ANT_EL_MIN Limit
+int int_antElMin = ANT_EL_MIN;
+char antElMin[4] = "";
+char tmp_antElMin[4] = "";
+String antElMin_mem = "";
+
+// For ANT_EL_MAX Limit
+int int_antElMax = ANT_EL_MAX;
+char antElMax[4] = "";
+char tmp_antElMax[4] = "";
+String antElMax_mem = "";
+
+// For ANT AZ PARK
+int int_azPark = PARK_AZ;
+char azPark[4] = "";
+char tmp_azPark[4] = "";
+String azPark_mem = "";
+
+// For ANT EL PARK
+int int_elPark = PARK_EL;
+char elPark[4] = "";
+char tmp_elPark[4] = "";
+String elPark_mem = "";
 
 const int menuDutyCycle[3] = {LOW_DUTY_CYCLE, MID_DUTY_CYCLE, HIGH_DUTY_CYCLE}; // 3 different duty cycles, 0:Low, 1:Mid, 2:High
 // menuDutyCycle[0] = LOW_DUTY_CYCLE;  // Low
@@ -530,8 +577,8 @@ int currentMovingTimeEl = 0;
 int diffMovingTimeEl = 0;
 int timeout_stop = TIMEOUT_STOP;
 
-const int az_park = PARK_AZ;
-const int el_park = PARK_EL;
+// const int az_park = PARK_AZ;
+// const int el_park = PARK_EL;
 int az_moving_state = 0;  // now obsolete, to delete
 int moving_state[] = {0, 0};  // 1st elem -> azimuth, 2nd elem -> elevation
 // int park_state = 0;     // now obsolete, to delete
@@ -1544,7 +1591,7 @@ void request_command(String axis, String request, float parm_degrees) {
       // Serial.print("GOTO az l_azIntAngle, az_parm :");
       // Serial.print(l_azIntAngle);
       // Serial.println(az_parm);
-      if(az_parm < (ANT_AZ_MAX * trackAccuFactor[trackAccuInd]) && az_parm > (ANT_AZ_MIN * trackAccuFactor[trackAccuInd])) {
+      if(az_parm < (int_antAzMax * trackAccuFactor[trackAccuInd]) && az_parm > (int_antAzMin * trackAccuFactor[trackAccuInd])) {
         if(az_parm < l_azIntAngle) {   // Move CCW (backward) 
           if(moving_state[0] != 2) {    // if not already moving azimuth the same direction
             if(moving_state[0] == 1) {    // if already moving azimuth the opposite (CW) direction
@@ -1610,7 +1657,7 @@ void request_command(String axis, String request, float parm_degrees) {
         l_elIntAngle = round(el_floatAngle * trackAccuFactor[trackAccuInd]);    // Convert float to int
       }
       int el_parm = round(parm_degrees * trackAccuFactor[trackAccuInd]);          // Convert float to int
-      if(el_parm < (ANT_EL_MAX * trackAccuFactor[trackAccuInd]) && el_parm > (ANT_EL_MIN * trackAccuFactor[trackAccuInd])) {
+      if(el_parm < (int_antElMax * trackAccuFactor[trackAccuInd]) && el_parm > (int_antElMin * trackAccuFactor[trackAccuInd])) {
         if(el_parm < l_elIntAngle) {   // Move Down
           if(moving_state[1] != 2) {    // if not already moving elevation the same direction
             if(moving_state[1] == 1) {    // if already moving elevation the opposite (Up) direction
@@ -1733,7 +1780,7 @@ void func_track_object(float trackobj_azim, float trackobj_elev) {
         Serial.println(l_trackobjAzim);
       #endif
       // if(l_trackobjAzim < ANT_AZ_MAX && l_trackobjAzim > ANT_AZ_MIN) {
-      if(l_trackobjAzim < (ANT_AZ_MAX * trackAccuFactor[trackAccuInd]) && l_trackobjAzim > (ANT_AZ_MIN * trackAccuFactor[trackAccuInd])) {
+      if(l_trackobjAzim < (int_antAzMax * trackAccuFactor[trackAccuInd]) && l_trackobjAzim > (int_antAzMin * trackAccuFactor[trackAccuInd])) {
         if(l_trackobjAzim < l_azIntAngle) {   // Move CCW (backward)
           statusTrackingObject[0] = 1; // Keep the current tracking period as active
           if(moving_state[0] != 2) {    // if not moving already the same direction
@@ -1809,7 +1856,7 @@ void func_track_object(float trackobj_azim, float trackobj_elev) {
         Serial.print("l_trackobjElev is: ");
         Serial.println(l_trackobjElev);
       #endif
-      if(l_trackobjElev < (ANT_EL_MAX * trackAccuFactor[trackAccuInd]) && l_trackobjElev > (ANT_EL_MIN * trackAccuFactor[trackAccuInd])) {
+      if(l_trackobjElev < (int_antElMax * trackAccuFactor[trackAccuInd]) && l_trackobjElev > (int_antElMin * trackAccuFactor[trackAccuInd])) {
         if(l_trackobjElev < l_elIntAngle) {   // Move Downwards
           statusTrackingObject[1] = 1; // Keep the current tracking period as active
           if(moving_state[1] != 2) {    // if not moving already the same direction
@@ -2172,6 +2219,7 @@ void getSunPos() {
   #endif
 }
 
+/*
 void getMoonPos() {
   cTime udtTime;
   double RA, Dec, topRA, topDec, LST, HA, dist;
@@ -2212,7 +2260,82 @@ void getMoonPos() {
   Serial.println();
   #endif
 }
+*/
 
+// Get the moon position (AZ / EL) and self doppler.
+void getMoonPosAndDoppler() {
+  cTime udtTime;
+//  double RA, Dec, topRA, topDec, LST, HA, dist;
+  
+  udtTime.iDay = timeinfo.tm_mday;
+  udtTime.iMonth = timeinfo.tm_mon + 1; // tm_mon is from 0 to 11
+  udtTime.iYear = timeinfo.tm_year + 1900;  // tm_year is the year since 1900
+  udtTime.dHours = timeinfo.tm_hour;
+  udtTime.dMinutes = timeinfo.tm_min;
+  udtTime.dSeconds = timeinfo.tm_sec;
+  
+//  moon2(udtTime.iYear, udtTime.iMonth, udtTime.iDay, (udtTime.dHours + (udtTime.dMinutes / 60.0) + (udtTime.dSeconds / 3600.0)), udtLocation.dLongitude, udtLocation.dLatitude, &RA, &Dec, &topRA, &topDec, &LST, &HA, &moon_azimuth, &moon_elevation, &dist);
+/*
+  #ifdef DEBUG
+  Serial.println(" ");
+  Serial.print("Latitude: ");
+  Serial.print(udtLocation.dLatitude);
+  Serial.print(" Longitude: ");
+  Serial.print(udtLocation.dLongitude);
+  Serial.println();
+
+  Serial.print(" Moon Elevetion angle: ");
+  Serial.print(moon_elevation);  
+  Serial.println();
+  Serial.print(" Moon Azimuth: ");
+  Serial.print(moon_azimuth);
+  Serial.println();
+  Serial.print(" Moon RA: "); // Right Ascension
+  Serial.print(RA);  
+  Serial.print(", Moon Dec: "); // Declination
+  Serial.print(Dec);
+  Serial.println();
+  Serial.print(" Moon topRA: ");  // Topocentric Right Ascension
+  Serial.print(topRA);  
+  Serial.print(", Moon Dec: ");   // Topocentric Declination
+  Serial.print(topDec);
+  Serial.println();
+  Serial.println();
+  Serial.println();
+  #endif
+*/
+  
+  double RAMoon4, DecMoon4, LST4, HA4, AzMoon4, ElMoon4, vr4, dist4;
+  MoonDop(udtTime.iYear, udtTime.iMonth, udtTime.iDay, (udtTime.dHours + (udtTime.dMinutes / 60.0) + (udtTime.dSeconds / 3600.0)), udtLocation.dLongitude, udtLocation.dLatitude, &RAMoon4, &DecMoon4, &LST4, &HA4, &AzMoon4, &ElMoon4, &vr4, &dist4);
+  // Doppler = -(2*(Band * 1000. * (vr4 ))/299792.458);    // Self Doppler
+  Doppler = -(2*(freqBand[freqBandInd] * 1000. * (vr4 ))/299792.458);    // Self Doppler
+  Doppler *= 1000;
+  moon_azimuth = AzMoon4;
+  moon_elevation = ElMoon4;
+  
+  #ifdef DEBUG
+	  Serial.print("Band: ");
+	  Serial.print(freqBand[freqBandInd]);
+	  Serial.print(" , Doppler: ");
+	  Serial.println(Doppler);
+	  Serial.print(" Moon AzMoon4 angle: ");
+    Serial.print(AzMoon4);  
+    Serial.println();
+    Serial.print(" Moon ElMoon4: ");
+    Serial.print(ElMoon4);
+    Serial.println();
+  #endif
+}
+
+
+// ### update_freqBand(fFreqBandInd), stores the freq band in EEPROM. 
+void update_freqBand(int fFreqBandInd) {
+  freqBandInd = fFreqBandInd;
+  #ifdef DEBUG
+    Serial.printf(" freqBandInd [%d], saving... \n", freqBandInd);
+  #endif
+  preferences.putInt("freq_band", freqBandInd);   // Store the freqBandInd to EEPROM
+} // End of update_freqBand()
 
 
 // ### update_azOffset(*fazOffset), stores the Az offset in EEPROM. 
@@ -2376,6 +2499,87 @@ void update_antErrorTimeout(char *fantErrorTimeout) {
     ESP.restart();
   }
 } // End of update_antErrorTimeout()
+
+
+// ### update_antAzLimits(*fantAzMin, *fantAzMax), stores the ANT_AZ_MIN and ANT_AZ_MAX in EEPROM. 
+void update_antAzLimits(char *fantAzMin, char *fantAzMax) {
+  strncpy(antAzMin, fantAzMin, 4); // Copy the fantAzMin back to antAzMin
+  sscanf(fantAzMin, "%d", &int_antAzMin);
+  #ifdef DEBUG
+    Serial.printf("update_antAzLimits(), the antAzMin is [%d]\n", int_antAzMin);
+  #endif
+  antAzMin_mem = fantAzMin;    // assign char array to string ???
+  #ifdef DEBUG
+    Serial.printf(" update_antAzLimits [%s], saving antAzMin_mem... \n", antAzMin_mem);
+  #endif
+  preferences.putString("ant_az_min", antAzMin_mem);   // Store the antAzMin to EEPROM
+
+  strncpy(antAzMax, fantAzMax, 4); // Copy the fantAzMax back to antAzMax
+  sscanf(fantAzMax, "%d", &int_antAzMax);
+  #ifdef DEBUG
+    Serial.printf("update_antAzLimits(), the antAzMax is [%d]\n", int_antAzMax);
+  #endif
+  antAzMax_mem = fantAzMax;    // assign char array to string ???
+  #ifdef DEBUG
+    Serial.printf(" update_antAzLimits [%s], saving antAzMax_mem... \n", antAzMax_mem);
+  #endif
+  preferences.putString("ant_az_max", antAzMax_mem);   // Store the antAzMax to EEPROM
+
+} // End of update_antAzLimits()
+
+// ### update_antElLimits(*fantElMin, *fantElMax), stores the ANT_EL_MIN and ANT_EL_MAX in EEPROM. 
+void update_antElLimits(char *fantElMin, char *fantElMax) {
+  strncpy(antElMin, fantElMin, 4); // Copy the fantElMin back to antElMin
+  sscanf(fantElMin, "%d", &int_antElMin);
+  #ifdef DEBUG
+    Serial.printf("update_antElLimits(), the antElMin is [%d]\n", int_antElMin);
+  #endif
+  antElMin_mem = fantElMin;    // assign char array to string ???
+  #ifdef DEBUG
+    Serial.printf(" update_antElLimits [%s], saving antElMin_mem... \n", antElMin_mem);
+  #endif
+  preferences.putString("ant_el_min", antElMin_mem);   // Store the antElMin to EEPROM
+
+  strncpy(antElMax, fantElMax, 4); // Copy the fantElMax back to antElMax
+  sscanf(fantElMax, "%d", &int_antElMax);
+  #ifdef DEBUG
+    Serial.printf("update_antElLimits(), the antElMax is [%d]\n", int_antElMax);
+  #endif
+  antElMax_mem = fantElMax;    // assign char array to string ???
+  #ifdef DEBUG
+    Serial.printf(" update_antElLimits [%s], saving antElMax_mem... \n", antElMax_mem);
+  #endif
+  preferences.putString("ant_el_max", antElMax_mem);   // Store the antElMax to EEPROM
+
+} // End of update_antElLimits()
+
+
+// ### update_ParkPosition(*fazPark, *felPark), stores the PARK_AZ and PARK_EL in EEPROM. 
+void update_ParkPosition(char *fazPark, char *felPark) {
+  strncpy(azPark, fazPark, 4); // Copy the fazPark back to azPark
+  sscanf(fazPark, "%d", &int_azPark);
+  #ifdef DEBUG
+    Serial.printf("update_ParkPosition(), the azPark is [%d]\n", int_azPark);
+  #endif
+  azPark_mem = fazPark;    // assign char array to string ???
+  #ifdef DEBUG
+    Serial.printf(" update_ParkPosition [%s], saving azPark_mem... \n", azPark_mem);
+  #endif
+  preferences.putString("az_park", azPark_mem);   // Store the azPark to EEPROM
+
+  strncpy(elPark, felPark, 4); // Copy the felPark back to elPark
+  sscanf(felPark, "%d", &int_elPark);
+  #ifdef DEBUG
+    Serial.printf("update_ParkPosition(), the elPark is [%d]\n", int_elPark);
+  #endif
+  elPark_mem = felPark;    // assign char array to string ???
+  #ifdef DEBUG
+    Serial.printf(" update_ParkPosition [%s], saving elPark_mem... \n", elPark_mem);
+  #endif
+  preferences.putString("el_park", elPark_mem);   // Store the elPark to EEPROM
+
+} // End of update_ParkPosition()
+
 
 // ### update_encoderFlag(fencoderFlag), stores the encoder_flag in EEPROM. 
 void update_encoderFlag(char fencoderFlag) {
@@ -2879,13 +3083,6 @@ void lcd_objPos(float azAngle, float elAngle) {
   lcd.print(azAngle, 1);
   lcd.print(" ");
   lcd.print(elAngle, 1);
-  lcd.setCursor(0,3);   // Goto to 4th line
-  int i;
-  for(i=0; i<20; i++) {
-    // lcd.setCursor(i,3);   // Goto to 4th line
-    lcd.print(" ");       // and clear any previous text
-  }
-  lcd.setCursor(0,3);
 
 //  display.display();
 }
@@ -3038,6 +3235,39 @@ void lcd_MenuText(int menuIndex) {
     case 7:
       lcd.print(">Time. '-' to store");
       break;
+    case 8:
+      lcd.print(">ANT AZ LIMITS:");
+      lcd.setCursor(0,3);
+      lcd.print("MIN:");
+      lcd.setCursor(7,3);
+      lcd.print(char(asciiSym));
+      lcd.setCursor(9,3);
+      lcd.print("MAX:");
+      lcd.setCursor(16,3);
+      lcd.print(char(asciiSym));
+      break;
+    case 9:
+      lcd.print(">ANT EL LIMITS:");
+      lcd.setCursor(0,3);
+      lcd.print("MIN:");
+      lcd.setCursor(7,3);
+      lcd.print(char(asciiSym));
+      lcd.setCursor(9,3);
+      lcd.print("MAX:");
+      lcd.setCursor(16,3);
+      lcd.print(char(asciiSym));
+      break;
+    case 10:
+      lcd.print(">PARK POSITION:");
+      lcd.setCursor(0,3);
+      lcd.print("AZ:");
+      lcd.setCursor(6,3);
+      lcd.print(char(asciiSym));
+      lcd.setCursor(9,3);
+      lcd.print("EL:");
+      lcd.setCursor(15,3);
+      lcd.print(char(asciiSym));
+      break;
     default:
       lcd.print(">Err menu");
       
@@ -3052,6 +3282,9 @@ void lcd_Menu_BText(int menuIndex) {
   switch(menuIndex)
   {
     case 0:
+      lcd.print(">Moon doppler band:");
+      break;
+    case 1:
       lcd.print(">SAT1: ");
       // for(i=0; i<=sizeof(satelName[0]); i++) {
       for(i=0; satelName[0][i] != '\0'; i++) {
@@ -3060,7 +3293,7 @@ void lcd_Menu_BText(int menuIndex) {
       lcd.setCursor(6,3);
       lcd.print("NORAD No");
       break;
-    case 1:
+    case 2:
       lcd.print(">SAT2: ");
       // for(i=0; i<=sizeof(satelName[1]); i++) {
       for(i=0; satelName[1][i] != '\0'; i++) {
@@ -3069,7 +3302,7 @@ void lcd_Menu_BText(int menuIndex) {
       lcd.setCursor(6,3);
       lcd.print("NORAD No");
       break;
-    case 2:
+    case 3:
       lcd.print(">SAT3: ");
       // for(i=0; i<=sizeof(satelName[2]); i++) {
       for(i=0; satelName[2][i] != '\0'; i++) {
@@ -3078,7 +3311,7 @@ void lcd_Menu_BText(int menuIndex) {
       lcd.setCursor(6,3);
       lcd.print("NORAD No");
       break;
-    case 3:
+    case 4:
       lcd.print(">SAT4: ");
       // for(i=0; i<=sizeof(satelName[3]); i++) {
       for(i=0; satelName[3][i] != '\0'; i++) {
@@ -3087,27 +3320,27 @@ void lcd_Menu_BText(int menuIndex) {
       lcd.setCursor(6,3);
       lcd.print("NORAD No");
       break;    
-    case 4:
+    case 5:
       lcd.print(">ENCODER FLAG:");
       lcd.setCursor(2,3);
       lcd.print("(0:SPI 1:RS485)");
       break;
-    case 5:
+    case 6:
       lcd.print(">ENCODER AZ BITS:");
       lcd.setCursor(2,3);
       lcd.print("(0:12bit 1:14bit)");
       break;
-    case 6:
+    case 7:
       lcd.print(">ENCODER EL BITS:");
       lcd.setCursor(2,3);
       lcd.print("(0:12bit 1:14bit)");
       break;
-    case 7:
+    case 8:
       lcd.print(">OPTION REVERSE AZ:");
       lcd.setCursor(2,3);
       lcd.print("(0:False 1:True)");
       break;
-    case 8:
+    case 9:
       lcd.print(">OPTION REVERSE EL:");
       lcd.setCursor(2,3);
       lcd.print("(0:False 1:True)");
@@ -3178,13 +3411,8 @@ void display_clock(int _timeRise) {
 }
 */
 
+// Function lcd_clock(). Shows the time remaining of next satellite rise, the starting Azimuth and the max Elevation of the orbit.
 void lcd_clock(int _timeRise, double fAzstart, double fMaxEl) {
-  lcd.setCursor(0,3);   // Goto to 4th line
-  int i;
-  for(i=0; i<20; i++) {
-    lcd.print(" ");       // and clear any previous text
-  }
-  
   float l_azStart;
   float l_maxEl;
   l_azStart = (float)fAzstart;
@@ -3202,6 +3430,25 @@ void lcd_clock(int _timeRise, double fAzstart, double fMaxEl) {
   lcd.print("MaxEl:");
   lcd.print(l_maxEl, 1);
 }
+
+
+// Function lcd_doppler(). At the 4rd row of LCD, it shows the band and self-doppler when the object is moon.
+void lcd_doppler(double fband, double fdoppler) {
+
+  lcd.setCursor(0,3);
+  lcd.print("Freq ");
+  lcd.print(fband, 0);
+  lcd.setCursor(11,3);  // Go to middle of 2nd line
+  lcd.print("Dop");
+  if(fdoppler < 0) {
+    lcd.print(fdoppler, 0);
+  }
+  else {
+    lcd.print("+");
+    lcd.print(fdoppler, 0);
+  }
+}
+
 
 /*
 void display_menuValue(int menuObj, short invert_text) {
@@ -3355,6 +3602,51 @@ void lcd_menuValue(int menuObj) {
     lcd.print(wholeTime);
 
   }
+  else if (menuObj == 8) { // ANT AZ LIMITS
+    #ifdef DEBUG
+      Serial.printf("tmp_antAzMin is %s\n", tmp_antAzMin);
+      Serial.printf("tmp_antAzMax is %s\n", tmp_antAzMax);
+    #endif
+    lcd.setCursor(4,3);
+    int i;
+    for(i=0; i<=2; i++) {
+      lcd.print(tmp_antAzMin[i]);
+    }
+    lcd.setCursor(13,3);
+    for(i=0; i<=2; i++) {
+      lcd.print(tmp_antAzMax[i]);
+    }
+  }
+  else if (menuObj == 9) { // ANT EL LIMITS
+    #ifdef DEBUG
+      Serial.printf("tmp_antElMin is %s\n", tmp_antElMin);
+      Serial.printf("tmp_antElMax is %s\n", tmp_antElMax);
+    #endif
+    lcd.setCursor(4,3);
+    int i;
+    for(i=0; i<=2; i++) {
+      lcd.print(tmp_antElMin[i]);
+    }
+    lcd.setCursor(13,3);
+    for(i=0; i<=2; i++) {
+      lcd.print(tmp_antElMax[i]);
+    }
+  }
+  else if (menuObj == 10) { // PARK Position
+    #ifdef DEBUG
+      Serial.printf("tmp_azPark is %s\n", tmp_azPark);
+      Serial.printf("tmp_elPark is %s\n", tmp_elPark);
+    #endif
+    lcd.setCursor(3,3);
+    int i;
+    for(i=0; i<=2; i++) {
+      lcd.print(tmp_azPark[i]);
+    }
+    lcd.setCursor(12,3);
+    for(i=0; i<=2; i++) {
+      lcd.print(tmp_elPark[i]);
+    }
+  }
 /*  else if (menuObj == 10) { // ssid
     char charDisp1[30];
     int charDisp1_len;
@@ -3400,7 +3692,27 @@ void lcd_menu_BValue(int menuObj) {
   char charDisp[30];
   int charDisp_len;
 
-  if (menuObj == 0) { // satID of SAT1
+  if (menuObj == 0) { // freqBand
+    #ifdef DEBUG
+      Serial.printf("freqBand is %.1f\n", freqBand[freqBandInd]);
+    #endif
+    lcd.setCursor(0,3);
+    char ltmp_freqBand[8];
+    sprintf(ltmp_freqBand, "%.1f", freqBand[freqBandInd]);   // Get the double number of freqBand to the charArray in order to be able to print/show it in the Menu.
+    int isize;
+    isize = sizeof(ltmp_freqBand);
+    if(isize < 8) {
+      lcd.print(ltmp_freqBand);
+      int i;
+      for(i=isize; i<8; i++) {
+        lcd.print(" ");
+      }
+    }
+    else {
+      lcd.print(ltmp_freqBand);
+    }
+  }
+  else if (menuObj == 1) { // satID of SAT1
     #ifdef DEBUG
       Serial.printf("tmp_satID[0] is %s\n", tmp_satID[0]);
     #endif
@@ -3410,7 +3722,7 @@ void lcd_menu_BValue(int menuObj) {
       lcd.print(tmp_satID[0][i]);
     }
   }
-  else if (menuObj == 1) { // satID of SAT2
+  else if (menuObj == 2) { // satID of SAT2
     #ifdef DEBUG
       Serial.printf("tmp_satID[1] is %s\n", tmp_satID[1]);
     #endif
@@ -3420,7 +3732,7 @@ void lcd_menu_BValue(int menuObj) {
       lcd.print(tmp_satID[1][i]);
     }
   }
-  else if (menuObj == 2) { // satID of SAT3
+  else if (menuObj == 3) { // satID of SAT3
     #ifdef DEBUG
       Serial.printf("tmp_satID[2] is %s\n", tmp_satID[2]);
     #endif
@@ -3430,7 +3742,7 @@ void lcd_menu_BValue(int menuObj) {
       lcd.print(tmp_satID[2][i]);
     }
   }
-  else if (menuObj == 3) { // satID of SAT4
+  else if (menuObj == 4) { // satID of SAT4
     #ifdef DEBUG
       Serial.printf("tmp_satID[3] is %s\n", tmp_satID[3]);
     #endif
@@ -3441,14 +3753,14 @@ void lcd_menu_BValue(int menuObj) {
     }
   }
 
-  else if (menuObj == 4) { // Encoder_flag
+  else if (menuObj == 5) { // Encoder_flag
     #ifdef DEBUG
       Serial.printf("tmp_encoderFlag is %c\n", tmp_encoderFlag);
     #endif
     lcd.setCursor(0,3);
     lcd.print(tmp_encoderFlag);
   }
-  else if (menuObj == 5) { // Encoder_AZ_bits
+  else if (menuObj == 6) { // Encoder_AZ_bits
     #ifdef DEBUG
       Serial.printf("tmp_encoderAzBits is %c\n", tmp_encoderAzBits);
     #endif
@@ -3456,21 +3768,21 @@ void lcd_menu_BValue(int menuObj) {
     lcd.print(tmp_encoderAzBits);
   }
 
-  else if (menuObj == 6) { // Encoder_EL_bits
+  else if (menuObj == 7) { // Encoder_EL_bits
     #ifdef DEBUG
       Serial.printf("tmp_encoderElBits is %c\n", tmp_encoderElBits);
     #endif
     lcd.setCursor(0,3);
     lcd.print(tmp_encoderElBits);
   }
-  else if (menuObj == 7) { // Option_Reverse_AZ
+  else if (menuObj == 8) { // Option_Reverse_AZ
     #ifdef DEBUG
       Serial.printf("tmp_reverseAz is %c\n", tmp_reverseAz);
     #endif
     lcd.setCursor(0,3);
     lcd.print(tmp_reverseAz);
   }
-  else if (menuObj == 8) { // Option_Reverse_EL
+  else if (menuObj == 9) { // Option_Reverse_EL
     #ifdef DEBUG
       Serial.printf("tmp_reverseEl is %c\n", tmp_reverseEl);
     #endif
@@ -3516,6 +3828,14 @@ void clear_3_4_line_lcd() {
   }
 }
 
+// *** Clears the 4th line of the lcd. 
+void clear_4_line_lcd() {
+  lcd.setCursor(0,3);   // Goto to 4th line
+  for(i=0; i<20; i++) {
+    // lcd.setCursor(i,3);   // Goto to 4th line
+    lcd.print(" ");       // and clear any previous text
+  }
+}
   
 
 
@@ -3569,6 +3889,19 @@ void updateState_buttonShift() {
                 break;
             case 7:  // Set Time manually
                 // do nothing
+                blinkInd = 4;   // The next menuObj is Ant_Az_Limit and the cursor should go to position 4.
+                break;
+            case 8: // Ant_Az_Limit
+                update_antAzLimits(tmp_antAzMin, tmp_antAzMax);
+                blinkInd = 4;
+                break;
+            case 9: // Ant_El_Limits
+                update_antElLimits(tmp_antElMin, tmp_antElMax);
+                blinkInd = 3;   // The next menuObj is 10 (PARK Position) and the cursor should go to pos 3.
+                break;
+            case 10: // PARK POSITION
+                update_ParkPosition(tmp_azPark, tmp_elPark);
+                blinkInd = 0;   // The next menuObj is 0 (Az offset) and the cursor should go to the beginning.
                 break;
           }
           if (menuObject >= maxMenuObj) {   // If already in the last menu object go back to first
@@ -3580,16 +3913,19 @@ void updateState_buttonShift() {
         }
         else if(shiftButtonMode == 2)  {   // menu_B
           switch(menuObject)  {
-            case 0: // satID of SAT1
+            case 0: // freq band
+                update_freqBand(freqBandInd);
+                break;
+            case 1: // satID of SAT1
                 update_satID(tmp_satID[0], 0);
                 break;
-            case 1: // satID of SAT2
+            case 2: // satID of SAT2
                 update_satID(tmp_satID[1], 1);
                 break;
-            case 2: // satID of SAT3
+            case 3: // satID of SAT3
                 update_satID(tmp_satID[2], 2);
                 break;
-            case 3: // satID of SAT4
+            case 4: // satID of SAT4
                 update_satID(tmp_satID[3], 3);
                 break;
           }      
@@ -3614,6 +3950,7 @@ void updateState_buttonShift() {
         if(shiftButtonMode == 1) {
           shiftButtonMode = 2;  // menu_B
           autoButtonMode = 2;   // menu_B
+          blinkInd = 0;
         }
         else if(shiftButtonMode == 2) {
           shiftButtonMode = 0; // Exiting menu
@@ -3651,6 +3988,7 @@ void updateState_buttonShift() {
           #ifdef DEBUG
             Serial.println("Shift Button was LONG pressed, entering menu.");
           #endif
+          blinkInd = 0;
           shiftButtonMode = 1; // Entering config menu_A
           autoButtonMode = 1;
           startPressed = 0;
@@ -3661,6 +3999,12 @@ void updateState_buttonShift() {
           tmp_trackAccuInd = trackAccuInd + '0';
           strncpy(tmp_grid, grid, 7); // Copy the grid to tmp_grid, to be used for updating its value.
           strncpy(tmp_antErrorTimeout, antErrorTimeout, 3); // Copy the antErrorTimeout to tmp_antErrorTimeout, to be used for updating its value.
+          strncpy(tmp_antAzMin, antAzMin, 4); // Copy the antAzMin to tmp_antAzMin, to be used for updating its value.
+          strncpy(tmp_antAzMax, antAzMax, 4); // Copy the antAzMax to tmp_antAzMax, to be used for updating its value.
+          strncpy(tmp_antElMin, antElMin, 4); // Copy the antElMin to tmp_antElMin, to be used for updating its value.
+          strncpy(tmp_antElMax, antElMax, 4); // Copy the antElMax to tmp_antElMax, to be used for updating its value.
+          strncpy(tmp_azPark, azPark, 4);     // Copy the azPark to tmp_azPark, to be used for updating its value.
+          strncpy(tmp_elPark, elPark, 4);     // Copy the elPark to tmp_elPark, to be used for updating its value.
           tmp_encoderFlag = encoderFlagInd + '0';
           tmp_encoderAzBits = encoderAzBitsInd + '0';
           tmp_encoderElBits = encoderElBitsInd + '0';
@@ -3740,9 +4084,51 @@ void updateState_AutoButton(int l_autoButtonMode) {
               blinkInd++;
             }
             break;
-          case 10:   // Set Time manually
+          case 7:   // Set Time manually
             if(blinkInd >= 14) {
               blinkInd = 2;
+            }
+            else {
+              blinkInd++;
+            }
+            break;
+          case 8:   // ANT Az Limits
+            if(blinkInd >= 15) {
+              blinkInd = 4;
+            }
+            else if(blinkInd >= 13) {
+              blinkInd++;
+            }
+            else if(blinkInd >= 6) {
+              blinkInd = 13;
+            }
+            else {
+              blinkInd++;
+            }
+            break;
+          case 9:   // ANT El Limits
+            if(blinkInd >= 15) {
+              blinkInd = 4;
+            }
+            else if(blinkInd >= 13) {
+              blinkInd++;
+            }
+            else if(blinkInd >= 6) {
+              blinkInd = 13;
+            }
+            else {
+              blinkInd++;
+            }
+            break;
+          case 10:   // PARK Position
+            if(blinkInd >= 14) {
+              blinkInd = 3;
+            }
+            else if(blinkInd >= 12) {
+              blinkInd++;
+            }
+            else if(blinkInd >= 5) {
+              blinkInd = 12;
             }
             else {
               blinkInd++;
@@ -3797,6 +4183,15 @@ void updateState_AutoButton(int l_autoButtonMode) {
             case 7: // Set Time Manually
               // Do nothing
               break;
+            case 8: // Ant_Az_Limits
+              update_antAzLimits(tmp_antAzMin, tmp_antAzMax);
+              break;
+            case 9: // Ant_El_Limits
+              update_antElLimits(tmp_antElMin, tmp_antElMax);
+              break;
+            case 10: // PARK Position
+              update_ParkPosition(tmp_azPark, tmp_elPark);
+              break;
           }
           startAutoPressed = 0;
       }
@@ -3820,10 +4215,10 @@ void updateState_AutoButton(int l_autoButtonMode) {
         startAutoPressed = 0;
           
         switch(menuObject) {
-          case 0:   // satID1
-          case 1:   // satID2
-          case 2:   // satID3
-          case 3:   // satID4
+          case 1:   // satID1
+          case 2:   // satID2
+          case 3:   // satID3
+          case 4:   // satID4
             if(blinkInd >= 4) {
               blinkInd = 0;
             }
@@ -3841,36 +4236,39 @@ void updateState_AutoButton(int l_autoButtonMode) {
             Serial.println("Auto Button in menu_B was long pressed. Saving value in EEPROM...");
           #endif
           switch(menuObject)  {
-            case 0: // satID of SAT1
+            case 0: // freqBandInd
+              update_freqBand(freqBandInd);
+              break;
+            case 1: // satID of SAT1
               update_satID(tmp_satID[0], 0);
               fetchTLEandTime();  // Connects to WiFi and gets the TLE of the satellites and the Time from NTP server.
               break;
-            case 1: // satID of SAT2
+            case 2: // satID of SAT2
               update_satID(tmp_satID[1], 1);
               fetchTLEandTime();  // Connects to WiFi and gets the TLE of the satellites and the Time from NTP server.
               break;
-            case 2: // satID of SAT3
+            case 3: // satID of SAT3
               update_satID(tmp_satID[2], 2);
               fetchTLEandTime();  // Connects to WiFi and gets the TLE of the satellites and the Time from NTP server.
               break;
-            case 3: // satID of SAT4
+            case 4: // satID of SAT4
               update_satID(tmp_satID[3], 3);
               fetchTLEandTime();  // Connects to WiFi and gets the TLE of the satellites and the Time from NTP server.
               break;
               
-            case 4: // ENCODER_FLAG
+            case 5: // ENCODER_FLAG
               update_encoderFlag(tmp_encoderFlag);
               break;
-            case 5: // ENCODER_AZ_BITS
+            case 6: // ENCODER_AZ_BITS
               update_encoderAzBits(tmp_encoderAzBits);
               break;
-            case 6: // ENCODER_EL_BITS
+            case 7: // ENCODER_EL_BITS
               update_encoderElBits(tmp_encoderElBits);
               break;
-            case 7: // OPTION_REVERSE_AZ
+            case 8: // OPTION_REVERSE_AZ
               update_reverseAz(tmp_reverseAz);
               break;
-            case 8: // OPTION_REVERSE_EL
+            case 9: // OPTION_REVERSE_EL
               update_reverseEl(tmp_reverseEl);
               break;
           }
@@ -3945,7 +4343,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
       startPlusPressed = millis();
     } 
     
-    else if ((buttonPlusState1 == LOW) && (l_plusButtonMode == 1)) {    // buttonAutoState1 == LOW , the Plus button has just been released, Menu_A function
+    else if ((buttonPlusState1 == LOW) && (l_plusButtonMode == 1)) {    // buttonPlusState1 == LOW , the Plus button has just been released, Menu_A function
         endPlusPressed = millis();
         holdTime = endPlusPressed - startPlusPressed;
   
@@ -3954,6 +4352,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
             Serial.println("Plus Button was short pressed");
           #endif
           int asciiNum;
+          int asciiNum2;
           switch(l_menuObj) {
             case 0:   // Az offset setting
               asciiNum = (int)tmp_azOffset[blinkInd];
@@ -4384,7 +4783,211 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                 default:
                   Serial.printf("Plus, error. blinkInd is [%d]\n", blinkInd);
               }
-              break;    
+              break;
+            case 8:   // Ant Az Limits "MIN:270", the AZ_min consists of the 4th, 5th and 6th char.
+              asciiNum = (int)tmp_antAzMin[blinkInd-4];
+              asciiNum2 = (int)tmp_antAzMax[blinkInd-13];
+              switch(blinkInd) {
+                case 4:   // 1st alphanum range 0-3 of antAzMin
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 51) {    // If alphanum > 3, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_antAzMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antAzMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 5:   // 2nd alphanum range 0-9 of antAzMin
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_antAzMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antAzMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 6:   // 3rd alphanum range 0-9 of antAzMin
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_antAzMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antAzMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 13:   // 1st alphanum range 0-3 of antAzMax, "MAX:270", the AZ_max consists of the 13th, 14th and 15th char.
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 51) {    // If alphanum > 3, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_antAzMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 1st digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antAzMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 14:   // 2nd alphanum range 0-9 of antAzMax
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_antAzMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 2nd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antAzMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 15:   // 3rd alphanum range 0-9 of antAzMax
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_antAzMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 3rd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antAzMax[blinkInd-13]);
+                  #endif
+                  break;
+                default:
+                  Serial.printf("Plus, error. blinkInd is [%d]\n", blinkInd);
+              } // End Ant Az Limits setting
+              break;
+            case 9:   // Ant El Limits, "MIN:070", the EL_min consists of the 4th, 5th and 6th char.
+              asciiNum = (int)tmp_antElMin[blinkInd-4];
+              asciiNum2 = (int)tmp_antElMax[blinkInd-13];
+              switch(blinkInd) {
+                case 4:   // 1st alphanum range 0-3 of tmp_antElMin
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 49) {    // If alphanum > 1, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_antElMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antElMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 5:   // 2nd alphanum range 0-9 of tmp_antElMin
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_antElMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antElMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 6:   // 3rd alphanum range 0-9 of tmp_antElMin
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_antElMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antElMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 13:   // 1st alphanum range 0-3 of antElMax
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 49) {    // If alphanum > 1, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_antElMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 1st digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antElMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 14:   // 2nd alphanum range 0-9 of tmp_antElMax
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_antElMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 2nd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antElMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 15:   // 3rd alphanum range 0-9 of tmp_antElMax
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_antElMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 3rd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antElMax[blinkInd-13]);
+                  #endif
+                  break;
+                default:
+                  Serial.printf("Plus, error. blinkInd is [%d]\n", blinkInd);
+              } // End Ant El Limits setting
+              break;
+            case 10:   // PARK Position "AZ:180", the AZ consists of the 3rd, 4th and 5th char.
+              asciiNum = (int)tmp_azPark[blinkInd-3];
+              asciiNum2 = (int)tmp_elPark[blinkInd-12];
+              switch(blinkInd) {
+                case 3:   // 1st alphanum range 0-3 of azPark
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 51) {    // If alphanum > 3, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_azPark[blinkInd-3] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_azPark[blinkInd-3]);
+                  #endif
+                  break;
+                case 4:   // 2nd alphanum range 0-9 of azPark
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_azPark[blinkInd-3] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_azPark[blinkInd-3]);
+                  #endif
+                  break;
+                case 5:   // 3rd alphanum range 0-9 of azPark
+                  asciiNum++; // go to next alphanumeric
+                  if (asciiNum > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum = 48;
+                  }
+                  tmp_azPark[blinkInd-3] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_azPark[blinkInd-3]);
+                  #endif
+                  break;
+                case 12:   // 1st alphanum range 0-3 of elPark, "EL:090", the EL consists of the 12th, 13th and 14th char.
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 49) {    // If alphanum > 1, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_elPark[blinkInd-12] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 1st digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_elPark[blinkInd-12]);
+                  #endif
+                  break;
+                case 13:   // 2nd alphanum range 0-9 of elPark
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_elPark[blinkInd-12] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 2nd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_elPark[blinkInd-12]);
+                  #endif
+                  break;
+                case 14:   // 3rd alphanum range 0-9 of elPark
+                  asciiNum2++; // go to next alphanumeric
+                  if (asciiNum2 > 57) {    // If alphanum > 9, then go to 0
+                     asciiNum2 = 48;
+                  }
+                  tmp_elPark[blinkInd-12] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Plus, 3rd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_elPark[blinkInd-12]);
+                  #endif
+                  break;
+                default:
+                  Serial.printf("Plus, error. blinkInd is [%d]\n", blinkInd);
+              } // End PARK Position setting
+              break;
             default:
               Serial.println("Plus Button blinking change pending");
           }
@@ -4405,11 +5008,25 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
             Serial.println("Plus Button was short pressed in menu_B");
           #endif
           int asciiNum;
+          int index;
           switch(l_menuObj) {
-            case 0:   // satID1 setting
-            case 1:   // satID2 setting
-            case 2:   // satID3 setting
-            case 3:   // satID4 setting
+            case 0:   // freq Band setting
+              index = freqBandInd;
+              // 1st alphanum range 0-8
+              index++; // go to next alphanumeric
+              if (index > 8) {    // If alphanum > 8, then go to 0
+                index = 0;
+              }
+              freqBandInd = index;
+              clear_4_line_lcd();
+              #ifdef DEBUG
+                Serial.printf("Plus, 1st digit index is now [%d], freqBandInd [%d]\n", index, freqBandInd);
+              #endif
+              break;
+            case 1:   // satID1 setting
+            case 2:   // satID2 setting
+            case 3:   // satID3 setting
+            case 4:   // satID4 setting
               asciiNum = (int)tmp_satID[l_menuObj][blinkInd];
               switch(blinkInd) {
                 case 0:   // 1st alphanum range 0-9
@@ -4467,7 +5084,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
               } // End satID setting
               break; 
               
-            case 4:   // ENCODER_FLAG
+            case 5:   // ENCODER_FLAG
               asciiNum = (int)tmp_encoderFlag;
               // 1st alphanum range 0-1
               asciiNum++; // go to next alphanumeric
@@ -4479,7 +5096,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                 Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_encoderFlag);
               #endif
               break;
-            case 5:   // ENCODER_AZ_BITS
+            case 6:   // ENCODER_AZ_BITS
               asciiNum = (int)tmp_encoderAzBits;
               // 1st alphanum range 0-1
               asciiNum++; // go to next alphanumeric
@@ -4491,7 +5108,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                 Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_encoderAzBits);
               #endif
               break;
-            case 6:   // ENCODER_EL_BITS
+            case 7:   // ENCODER_EL_BITS
               asciiNum = (int)tmp_encoderElBits;
               // 1st alphanum range 0-1
               asciiNum++; // go to next alphanumeric
@@ -4503,7 +5120,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                 Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_encoderElBits);
               #endif
               break;
-            case 7:   // OPTION_REVERSE_AZ
+            case 8:   // OPTION_REVERSE_AZ
               asciiNum = (int)tmp_reverseAz;
               // 1st alphanum range 0-1
               asciiNum++; // go to next alphanumeric
@@ -4515,7 +5132,7 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                 Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_reverseAz);
               #endif
               break;
-            case 8:   // OPTION_REVERSE_EL
+            case 9:   // OPTION_REVERSE_EL
               asciiNum = (int)tmp_reverseEl;
               // 1st alphanum range 0-1
               asciiNum++; // go to next alphanumeric
@@ -4573,6 +5190,7 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
             Serial.println("Minus Button was short pressed");
           #endif
           int asciiNum;
+          int asciiNum2;
           switch(l_menuObj) {
             case 0:   // Az offset setting
               asciiNum = (int)tmp_azOffset[blinkInd];
@@ -4876,6 +5494,210 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
             case 7: // Store the Time set manually
               set_time_manual(manual_time);
               break;
+            case 8:   // Ant Az Limit setting
+              asciiNum = (int)tmp_antAzMin[blinkInd-4];
+              asciiNum2 = (int)tmp_antAzMax[blinkInd-13];
+              switch(blinkInd) {
+                case 4:   // 1st Char + or -
+                  asciiNum--; // 1st alphanum range 0-3 of tmp_antAzMin
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 3
+                     asciiNum = 51;
+                  }
+                  tmp_antAzMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antAzMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 5:   // 2nd alphanum range 0-9 of tmp_antAzMin
+                  asciiNum--; // go to next alphanumeric
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum = 57;
+                  }
+                  tmp_antAzMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antAzMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 6:   // 3rd alphanum range 0-9 of tmp_antAzMin
+                  asciiNum--; // go to next alphanumeric
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum = 57;
+                  }
+                  tmp_antAzMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antAzMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 13:   // 1st Char + or -
+                  asciiNum2--; // 1st alphanum2 range 0-3 of tmp_antAzMax
+                  if (asciiNum2 < 48) {    // If alphanum2 < 0, then go to 3
+                     asciiNum2 = 51;
+                  }
+                  tmp_antAzMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 1st digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antAzMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 14:   // 2nd alphanum range 0-9 of tmp_antAzMax
+                  asciiNum2--; // go to next alphanumeric
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum2 = 57;
+                  }
+                  tmp_antAzMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 2nd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antAzMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 15:   // 3rd alphanum range 0-9 of tmp_antAzMax
+                  asciiNum2--; // go to next alphanumeric
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum2 = 57;
+                  }
+                  tmp_antAzMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 3rd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antAzMax[blinkInd-13]);
+                  #endif
+                  break;
+                default:
+                  Serial.printf("Minus, error. blinkInd is [%d]\n", blinkInd);
+              } // End Ant Az Limit setting
+              break;
+            case 9:   // Ant El Limit setting
+              asciiNum = (int)tmp_antElMin[blinkInd-4];
+              asciiNum2 = (int)tmp_antElMax[blinkInd-13];
+              switch(blinkInd) {
+                case 4:   // 1st Char + or -
+                  asciiNum--; // 1st alphanum range 0-1 of tmp_antElMin
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 1
+                     asciiNum = 49;
+                  }
+                  tmp_antElMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antElMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 5:   // 2nd alphanum range 0-9 of tmp_antElMin
+                  asciiNum--; // go to next alphanumeric
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum = 57;
+                  }
+                  tmp_antElMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antElMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 6:   // 3rd alphanum range 0-9 of tmp_antElMin
+                  asciiNum--; // go to next alphanumeric
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum = 57;
+                  }
+                  tmp_antElMin[blinkInd-4] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_antElMin[blinkInd-4]);
+                  #endif
+                  break;
+                case 13:   // 1st Char + or -
+                  asciiNum2--; // 1st alphanum range 0-3 of tmp_antElMax
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 1
+                     asciiNum2 = 49;
+                  }
+                  tmp_antElMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 1st digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antElMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 14:   // 2nd alphanum range 0-9 of tmp_antElMax
+                  asciiNum2--; // go to next alphanumeric
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum2 = 57;
+                  }
+                  tmp_antElMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 2nd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antElMax[blinkInd-13]);
+                  #endif
+                  break;
+                case 15:   // 3rd alphanum range 0-9 of tmp_antElMax
+                  asciiNum2--; // go to next alphanumeric
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum2 = 57;
+                  }
+                  tmp_antElMax[blinkInd-13] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 3rd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_antElMax[blinkInd-13]);
+                  #endif
+                  break;
+                default:
+                  Serial.printf("Minus, error. blinkInd is [%d]\n", blinkInd);
+              } // End Ant El Limit setting
+              break;
+            case 10:   // PARK Position setting
+              asciiNum = (int)tmp_azPark[blinkInd-3];
+              asciiNum2 = (int)tmp_elPark[blinkInd-12];
+              switch(blinkInd) {
+                case 3:   // 1st Char + or -
+                  asciiNum--; // 1st alphanum range 0-3 of tmp_azPark
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 3
+                     asciiNum = 51;
+                  }
+                  tmp_azPark[blinkInd-3] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_azPark[blinkInd-3]);
+                  #endif
+                  break;
+                case 4:   // 2nd alphanum range 0-9 of tmp_azPark
+                  asciiNum--; // go to next alphanumeric
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum = 57;
+                  }
+                  tmp_azPark[blinkInd-3] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_azPark[blinkInd-3]);
+                  #endif
+                  break;
+                case 5:   // 3rd alphanum range 0-9 of tmp_azPark
+                  asciiNum--; // go to next alphanumeric
+                  if (asciiNum < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum = 57;
+                  }
+                  tmp_azPark[blinkInd-3] = asciiNum;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_azPark[blinkInd-3]);
+                  #endif
+                  break;
+                case 12:   // 1st Char + or -
+                  asciiNum2--; // 1st alphanum2 range 0-1 of tmp_elPark
+                  if (asciiNum2 < 48) {    // If alphanum2 < 0, then go to 1
+                     asciiNum2 = 49;
+                  }
+                  tmp_elPark[blinkInd-12] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 1st digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_elPark[blinkInd-12]);
+                  #endif
+                  break;
+                case 13:   // 2nd alphanum range 0-9 of tmp_elPark
+                  asciiNum2--; // go to next alphanumeric
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum2 = 57;
+                  }
+                  tmp_elPark[blinkInd-12] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 2nd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_elPark[blinkInd-12]);
+                  #endif
+                  break;
+                case 14:   // 3rd alphanum range 0-9 of tmp_elPark
+                  asciiNum2--; // go to next alphanumeric
+                  if (asciiNum2 < 48) {    // If alphanum < 0, then go to 9
+                     asciiNum2 = 57;
+                  }
+                  tmp_elPark[blinkInd-12] = asciiNum2;
+                  #ifdef DEBUG
+                    Serial.printf("Minus, 3rd digit asciiNum2 is now [%d], char [%c]\n", asciiNum2, tmp_elPark[blinkInd-12]);
+                  #endif
+                  break;
+                default:
+                  Serial.printf("Minus, error. blinkInd is [%d]\n", blinkInd);
+              } // End PARK Position setting
+              break;
             default:
               Serial.println("Minus Button blinking change pending");
           }
@@ -4896,11 +5718,25 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
             Serial.println("Minus Button was short pressed");
           #endif
           int asciiNum;
+          int index;
           switch(l_menuObj) {
-            case 0:   // satID1 setting
-            case 1:   // satID2 setting
-            case 2:   // satID3 setting
-            case 3:   // satID4 setting
+            case 0:   // Freq band setting
+              index = freqBandInd;
+              // 1st alphanum range 0-8
+              index--; // go to previous alphanumeric
+              if (index < 0) {    // If alphanum < 0, then go to 8
+                index = 8;
+              }
+              freqBandInd = index;
+              clear_4_line_lcd();
+              #ifdef DEBUG
+                Serial.printf("Minus, 1st digit index is now [%d], freqBandInd [%d]\n", index, freqBandInd);
+              #endif
+              break;
+            case 1:   // satID1 setting
+            case 2:   // satID2 setting
+            case 3:   // satID3 setting
+            case 4:   // satID4 setting
               asciiNum = (int)tmp_satID[l_menuObj][blinkInd];
               switch(blinkInd) {
                 case 0:   // 1st alphanum range 0-9
@@ -4958,7 +5794,7 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
               } // End satID setting
               break;
                   
-            case 4:   // ENCODER_FLAG
+            case 5:   // ENCODER_FLAG
               asciiNum = (int)tmp_encoderFlag;
               // 1st alphanum range 0-1
                   asciiNum--; // go to previous alphanumeric
@@ -4970,7 +5806,7 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                     Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_encoderFlag);
                   #endif
               break;
-            case 5:   // ENCODER_AZ_BITS
+            case 6:   // ENCODER_AZ_BITS
               asciiNum = (int)tmp_encoderAzBits;
               // 1st alphanum range 0-1
                   asciiNum--; // go to previous alphanumeric
@@ -4982,7 +5818,7 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                     Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_encoderAzBits);
                   #endif
               break;
-            case 6:   // ENCODER_EL_BITS
+            case 7:   // ENCODER_EL_BITS
               asciiNum = (int)tmp_encoderElBits;
               // 1st alphanum range 0-1
                   asciiNum--; // go to previous alphanumeric
@@ -4994,7 +5830,7 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                     Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_encoderElBits);
                   #endif
               break;
-            case 7:   // OPTION_REVERSE_AZ
+            case 8:   // OPTION_REVERSE_AZ
               asciiNum = (int)tmp_reverseAz;
               // 1st alphanum range 0-1
                   asciiNum--; // go to previous alphanumeric
@@ -5006,7 +5842,7 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                     Serial.printf("Minus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_reverseAz);
                   #endif
               break;
-            case 8:   // OPTION_REVERSE_EL
+            case 9:   // OPTION_REVERSE_EL
               asciiNum = (int)tmp_reverseEl;
               // 1st alphanum range 0-1
                   asciiNum--; // go to previous alphanumeric
@@ -5066,6 +5902,7 @@ void set_menuValue(int menu_obj, int l_shiftButtonMode) {
   else {
     Serial.println("set_menuValue() error.");
   }
+  // Serial.printf("set_menuValue() blinkInd: %d\n", blinkInd);
   lcd.setCursor(blinkInd,3);
   lcd.blink();
 }
@@ -5706,6 +6543,94 @@ void setup()
     Serial.printf("int_antErrorTimeout is %d\n", int_antErrorTimeout);
   }
 
+
+  // read the stored ANT_AZ_MIN from memory
+  antAzMin_mem = preferences.getString("ant_az_min", "");
+  if (antAzMin_mem != "") {
+    Serial.printf("Retrieved the saved ANT_AZ_MIN [%s] from memory.\n", antAzMin_mem);
+    antAzMin_mem.toCharArray(antAzMin, sizeof(antAzMin));
+    sscanf(antAzMin, "%d", &int_antAzMin);
+    Serial.printf("Retrieved the saved ANT_AZ_MIN, integer is [%d]\n", int_antAzMin);
+  }
+  else {
+    Serial.println("No values saved for ANT_AZ_MIN. Using the default.");
+    sprintf(antAzMin, "%03d", int_antAzMin);
+    //Serial.printf("antAzMin is %s\n", antAzMin);
+    Serial.printf("antAzMin is %d\n", int_antAzMin);
+  }
+
+  // read the stored ANT_AZ_MAX from memory
+  antAzMax_mem = preferences.getString("ant_az_max", "");
+  if (antAzMax_mem != "") {
+    Serial.printf("Retrieved the saved ANT_AZ_MAX [%s] from memory.\n", antAzMax_mem);
+    antAzMax_mem.toCharArray(antAzMax, sizeof(antAzMax));
+    sscanf(antAzMax, "%d", &int_antAzMax);
+    Serial.printf("Retrieved the saved ANT_AZ_MAX, integer is [%d]\n", int_antAzMax);
+  }
+  else {
+    Serial.println("No values saved for ANT_AZ_MAX. Using the default.");
+    sprintf(antAzMax, "%03d", int_antAzMax);
+    Serial.printf("antAzMax is %d\n", int_antAzMax);
+  }
+
+  // read the stored ANT_EL_MIN from memory
+  antElMin_mem = preferences.getString("ant_el_min", "");
+  if (antElMin_mem != "") {
+    Serial.printf("Retrieved the saved ANT_EL_MIN [%s] from memory.\n", antElMin_mem);
+    antElMin_mem.toCharArray(antElMin, sizeof(antElMin));
+    sscanf(antElMin, "%d", &int_antElMin);
+    Serial.printf("Retrieved the saved ANT_EL_MIN, integer is [%d]\n", int_antElMin);
+  }
+  else {
+    Serial.println("No values saved for ANT_EL_MIN. Using the default.");
+    sprintf(antElMin, "%03d", int_antElMin);
+    //Serial.printf("antElMin is %s\n", antElMin);
+    Serial.printf("antElMin is %d\n", int_antElMin);
+  }
+
+  // read the stored ANT_EL_MAX from memory
+  antElMax_mem = preferences.getString("ant_el_max", "");
+  if (antElMax_mem != "") {
+    Serial.printf("Retrieved the saved ANT_EL_MAX [%s] from memory.\n", antElMax_mem);
+    antElMax_mem.toCharArray(antElMax, sizeof(antElMax));
+    sscanf(antElMax, "%d", &int_antElMax);
+    Serial.printf("Retrieved the saved ANT_EL_MAX, integer is [%d]\n", int_antElMax);
+  }
+  else {
+    Serial.println("No values saved for ANT_EL_MAX. Using the default.");
+    sprintf(antElMax, "%03d", int_antElMax);
+    Serial.printf("antElMax is %d\n", int_antElMax);
+  }
+
+
+  // read the stored AZ PARK from memory
+  azPark_mem = preferences.getString("az_park", "");
+  if (azPark_mem != "") {
+    Serial.printf("Retrieved the saved AZ PARK [%s] from memory.\n", azPark_mem);
+    azPark_mem.toCharArray(azPark, sizeof(azPark));
+    sscanf(azPark, "%d", &int_azPark);
+    Serial.printf("Retrieved the saved AZ PARK, integer is [%d]\n", int_azPark);
+  }
+  else {
+    Serial.println("No values saved for PARK AZ. Using the default.");
+    sprintf(azPark, "%03d", int_azPark);
+    Serial.printf("azPark is %d\n", int_azPark);
+  }
+
+  // read the stored EL PARK from memory
+  elPark_mem = preferences.getString("el_park", "");
+  if (elPark_mem != "") {
+    Serial.printf("Retrieved the saved EL PARK [%s] from memory.\n", elPark_mem);
+    elPark_mem.toCharArray(elPark, sizeof(elPark));
+    sscanf(elPark, "%d", &int_elPark);
+    Serial.printf("Retrieved the saved EL PARK, integer is [%d]\n", int_elPark);
+  }
+  else {
+    Serial.println("No values saved for PARK EL. Using the default.");
+    sprintf(elPark, "%03d", int_elPark);
+    Serial.printf("elPark is %d\n", int_elPark);
+  }
+
   // read the stored satellite Celestrak IDs from flash memory
   satID1_mem = preferences.getString("sat_id1", "");
   if (satID1_mem != "") {
@@ -5745,6 +6670,18 @@ void setup()
   else {
     Serial.println("No values saved for satID[3]. Using the default.");
   }
+
+  // read the stored freq band index from memory
+  freqBandInd = preferences.getInt("freq_band", 2);
+  Serial.printf("Retrieved the freqBandInd [%d] from memory\n", freqBandInd);
+  if(freqBandInd >= 0 && freqBandInd <= 8) {
+    Serial.printf("freqBandInd is valid\n");
+    Serial.printf("freqBand[%d] is: %.1f\n", freqBandInd, freqBand[freqBandInd]);
+  }
+  else {
+    Serial.println("Error on retrieving freqBandInd");
+  }
+  
 
   // read the stored ENCODER_FLAG from memory (0:SPI, 1:RS485)
   encoderFlag_mem = preferences.getChar("encoder_flag", '0');   // Default is '0' (ascii 48)
@@ -6005,7 +6942,7 @@ void loop()
 
 // The following code is actually only used for serial commands 
   if (goto_state[0] != 0) {
-    if (goto_az_value > float(ANT_AZ_MIN) && goto_az_value < float(ANT_AZ_MAX)) {
+    if (goto_az_value > float(int_antAzMin) && goto_az_value < float(int_antAzMax)) {
       request_command("AZ", "GOTO", goto_az_value);
       park_state[0] = 0; // Disable parking of azimuth if in progress.
       tracking_state = 0;   // Disable tracking
@@ -6025,7 +6962,7 @@ void loop()
   }
 
   if (goto_state[1] != 0) {
-    if (goto_el_value > float(ANT_EL_MIN) && goto_el_value < float(ANT_EL_MAX)) {
+    if (goto_el_value > float(int_antElMin) && goto_el_value < float(int_antElMax)) {
       request_command("EL", "GOTO", goto_el_value);
       park_state[1] = 0; // Disable parking of elevation if in progress.
       tracking_state = 0;   // Disable tracking
@@ -6206,13 +7143,15 @@ void loop()
           // display_sunPos(sun_azim, sun_elev);
 //          display_objText(trackingObject);
           lcd_objText(trackingObject);
+          clear_4_line_lcd();
           obj_azim = sun_azim;
           obj_elev = sun_elev;
         #endif
       }
       else if (trackingObject == 1) {  // Moon tracking
         #ifdef FEATURE_MOON_TRACKING
-          getMoonPos();
+          //getMoonPos();
+          getMoonPosAndDoppler();
 //          display_objPos(moon_azimuth, moon_elevation);
           lcd_objPos(moon_azimuth, moon_elevation);
           // display_moonPos(moon_azimuth, moon_elevation);
@@ -6220,6 +7159,8 @@ void loop()
           lcd_objText(trackingObject);
           obj_azim = (float)moon_azimuth;
           obj_elev = (float)moon_elevation;
+          // lcd_doppler(Band, Doppler);
+          lcd_doppler(freqBand[freqBandInd], Doppler);
         #endif
       }
       #ifdef FEATURE_SATELLITE_TRACKING
@@ -6246,6 +7187,7 @@ void loop()
 //            display_objText(trackingObject);
             lcd_objPos(obj_azim, obj_elev);
             lcd_objText(trackingObject);
+            clear_4_line_lcd();
             #ifdef DEBUG
               Serial.print("sat obj_azim: ");
               Serial.println(String(obj_azim));
@@ -6268,12 +7210,13 @@ void loop()
         }
       #endif
       else if (trackingObject == maxObj) {    // Last object, the PARK position
-        obj_azim = (float)az_park;
-        obj_elev = (float)el_park;
+        obj_azim = (float)int_azPark;
+        obj_elev = (float)int_elPark;
 //        display_objPos(obj_azim, obj_elev);
 //        display_objText(trackingObject);
         lcd_objPos(obj_azim, obj_elev);
         lcd_objText(trackingObject);
+        clear_4_line_lcd();
         if (tracking_state == 0) {
           park_state[0] = 1;  // Enable azimuth to PARK
           park_state[1] = 1;  // Enable elevation to PARK
@@ -6288,7 +7231,7 @@ void loop()
         #endif
         tracking_state = 0; // Disable tracking
       }
-      }   // End if(nTP_flag == true || gPS_flag == true) 
+      }   // End of if(nTP_flag == true || gPS_flag == true || selfTime_flag == true)
     }   // End Main function
   
 //    if(tracking_state != 0) {
@@ -6301,7 +7244,7 @@ void loop()
         l_floatAZ = az_floatAngle;
         l_floatEL = el_floatAngle;
       }
-      if (l_floatAZ > float(ANT_AZ_MIN) && l_floatAZ < float(ANT_AZ_MAX) && l_floatEL > float(ANT_EL_MIN) && l_floatEL< float(ANT_EL_MAX)) {
+      if (l_floatAZ > float(int_antAzMin) && l_floatAZ < float(int_antAzMax) && l_floatEL > float(int_antElMin) && l_floatEL< float(int_antElMax)) {
         if(tracking_state != 0) {
           func_track_object(obj_azim, obj_elev);
         }
