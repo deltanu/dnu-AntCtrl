@@ -1,4 +1,4 @@
-/* Easycomm-like protocol implementation (Modified by adding position angles sent by dnu-AntCtrl board to the serial port every second or so to be captured by the used software).
+/* Easycomm protocol implementation
    *
    * Implemented commands:
    *
