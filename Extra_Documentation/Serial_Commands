@@ -23,5 +23,6 @@
    *
    *
    * Commands are executed upon carriage return or line feed
+   * The query "AZ EL" (query Azimuth and Elevation) can also be sent. Then the repsonse will be like "AZ+180.2 EL+34.5".
    * 
 */
