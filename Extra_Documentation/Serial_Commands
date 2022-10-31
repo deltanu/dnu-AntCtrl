@@ -2,14 +2,21 @@
    *
    * Implemented commands:
    *
-   * Command      Meaning     Parameters
-   * -------      -------     ----------
+   * Command      Meaning             Response
+   * -------      -------             ----------
    *
-   * AZ           Query azimuth
+   * ML           Move Left
+   * MR           Move Right
+   * MU           Move Up
+   * MD           Move Down
+   * SA           Stop azimuth moving
+   * SE           Stop elevation moving
+   *
+   * AZ           Query azimuth       Returns AZ+x.x or AZ+xx.x or AZ+xxx.x
    * AZx.x        Rotate to Azimuth
    * AZxx.x       Rotate to Azimuth
    * AZxxx.x      Rotate to Azimuth
-   * EL           Request Elevation
+   * EL           Request Elevation   Returns EL+x.x or EL+xx.x or EL+xxx.x
    * ELx.x        Rotate to Elevation
    * ELxx.x       Rotate to Elevation
    * ELxxx.x      Rotate to Elevation
@@ -17,11 +24,4 @@
    *
    * Commands are executed upon carriage return or line feed
    * 
-   * Responses from dnu-AntCtrl board sent to the serial port every second or so.
-   * Response     Meaning
-   * --------     -------
-   * 
-   * #AZxxx.x     Azimuth position
-   * #ELxxx.x     Elevation position
-   *
 */
