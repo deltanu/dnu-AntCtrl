@@ -8,3 +8,5 @@ ts:YYYYMMDD-hhmmss  | N/A                 | Manually UTC Time Set. Useful if the
 !auto_ds            | N/A                 | Disables auto tracking
 !obj_get            | #X                  | Retrieves the number X of the current object to track (0=Sun, 1=Moon, 2=SAT1, 3=SAT2, 4=SAT3, 5=SAT4, 6=PARK)
 !obj_inc            | #X                  | Sets the next object to track and retrieves that object number X.
+
+- Commands are executed upon carriage return or line feed.
