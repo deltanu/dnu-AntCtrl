@@ -37,6 +37,8 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol_RS. (Separate PCB for the Absolute Encoders):
+// 1.18 - [2023-03-19] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object)
+//            Return values respectively are: #auto_en, #auto_ds, #X, #X where X is the object number.
 // 1.17 - [2022-11-12] LCD display error fix when timeout of motors. tle_time_lcd() updated.
 // 1.16 - [2022-10-17] Setting Parking Position in the menu and store it in EEPROM.
 // 1.15 - [2022-10-11] Setting the Antenna AZ, EL min/max limits from the menu_A and storing the values in the EEPROM.
@@ -130,7 +132,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 */
-#define CODE_VERSION "1.17"
+#define CODE_VERSION "1.18"
 
 #include <string.h>
 #include "FS.h"
@@ -851,6 +853,21 @@ void transformel()  // transform elevation info to degrees
 }
 
 
+void disable_autoTracking() {
+  tracking_state = 0;   // Disable auto tracking
+  #if defined(ENABLE_AZIMUTH)
+    if(moving_state[0] != 0) { // If azimuth Motor is already moving
+      Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);  // Stop Azimuth motor
+    }  
+  #endif
+  #if defined(ENABLE_ELEVATION)
+    if(moving_state[1] != 0) { // If elevation Motor is already moving
+      Motor_Soft_Stop(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);  // Stop Elevation motor
+    }
+  #endif
+}
+
+
 void serial_menu_motor_test(int read_input) {     // Temp function to test motor
 // send data only when you receive data:
   if (read_input == 0) { // Check serial for single alphanumeric input
@@ -984,7 +1001,10 @@ void check_serial() {
     // if it is an Easycom command and we have a space, line feed, or carriage return, process it
     if ((incoming_serial_byte == 10) || (incoming_serial_byte == 13) || ((incoming_serial_byte == 32) && !flag_endSpace) ) {
       if (control_port_buffer_index > 1) {
-        if(control_port_buffer[0] == 'w') {   // command to set WiFi credentials, 'ws' (ssid) or 'wp' (pass)
+        if(control_port_buffer[0] == '!') {   // command_basic
+          command_basic(control_port_buffer, control_port_buffer_index, return_string);
+        }
+        else if(control_port_buffer[0] == 'w') {   // command to set WiFi credentials, 'ws' (ssid) or 'wp' (pass)
           flag_endSpace = false;
           set_WiFi_cred(control_port_buffer, control_port_buffer_index);
           if((strlen(tmp_ssid) != 0) && (strlen(tmp_passwd) != 0)) {
@@ -1037,6 +1057,54 @@ void clear_command_buffer(){
   control_port_buffer[0] = 0;
 }
 
+
+// Function command_basic(). Interprets commands starting with "!" . "!auto_en" -> enable auto tracking. "!auto_ds" -> disable auto tracking
+void command_basic(byte * basic_command_buffer, int basic_command_buffer_index, char * return_string) {
+  char tempString[20] = "";
+
+  if(basic_command_buffer_index == 8) {
+    memcpy(tempString, control_port_buffer, 8);
+    if(strcmp(tempString, "!auto_en") == 0) {   // '!auto_en' command
+      tracking_state = 1;   // Enable tracking
+        
+      statusTrackingObject[0] = 1; // Enable current period azimuth tracking
+      statusTrackingObject[1] = 1; // Enable current period elevation tracking
+      startTrackTime = millis();  // Store the start time of tracking
+      func_track_object(obj_azim, obj_elev);
+      strcpy(return_string,"#auto_en");
+      return;
+    }
+    else if(strcmp(tempString, "!auto_ds") == 0) {   // '!auto_ds' command
+      disable_autoTracking();
+      tracking_state = 0;   // Disable tracking
+      park_state[0] = 0;  // To avoid continuing to park position
+      park_state[1] = 0;  // To avoid continuing to park position
+      strcpy(return_string,"#auto_ds");
+      return;
+    }
+    else if(strcmp(tempString, "!obj_inc") == 0) {   // '!obj_inc' command. Increase the object by one and return its value.
+      if (objectState >= maxObj) {   // If already in the last object go back to first
+        objectState = 0;  // Go to first object (Sun)
+      }
+      else {
+        objectState++;  // Increase by 1
+      }
+      clear_3_4_line_lcd();
+      strcpy(return_string,"#");
+      sprintf(tempString, "%d", objectState);
+      strcat(return_string,tempString);
+      return;
+    }
+    else if(strcmp(tempString, "!obj_get") == 0) {   // '!obj_get' command. Return the value of the current object.
+      strcpy(return_string,"#");
+      sprintf(tempString, "%d", objectState);
+      strcat(return_string,tempString);
+      return;
+    }
+
+  }
+  
+} // end of command_basic()
 
 
 // Function set_WiFi_cred. Interprets commands "ws:<WiFi ssid>" and "wp:<WiFi passwd>"
