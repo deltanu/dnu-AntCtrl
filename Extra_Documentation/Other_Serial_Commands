@@ -4,9 +4,11 @@ restart             | N/A                 | Restarts the microcontroller
 ws:<ssid>           | N/A                 | Sets the <ssid> of the WiFi Access Point to connect
 wp:<passwd>         | N/A                 | Sets the <passwd> of the WiFi Access Point to connect
 ts:YYYYMMDD-hhmmss  | N/A                 | Manually UTC Time Set. Useful if there is neither WiFi available nor GPS signal (if GPS is connected)
-!auto_en            | N/A                 | Enables auto tracking of the current object
-!auto_ds            | N/A                 | Disables auto tracking
+!auto_en            | #auto_en            | Enables auto tracking of the current object
+!auto_ds            | #auto_ds            | Disables auto tracking
 !obj_get            | #X                  | Retrieves the number X of the current object to track (0=Sun, 1=Moon, 2=SAT1, 3=SAT2, 4=SAT3, 5=SAT4, 6=PARK)
-!obj_inc            | #X                  | Sets the next object to track and retrieves that object number X.
+                                              If the object is a satellite (2-5) then returns also the NORAD No. Example of SAT1 response: #2:07530
+!obj_inc            | #X                  | Sets the next object to track and retrieves that object number X. Returns also the NORAD No if satellite.
+!tle_upd            | #tle_upd            | Orders the update of satellite TLEs and Time sync via WiFi.
 
 - Commands are executed upon carriage return or line feed.
