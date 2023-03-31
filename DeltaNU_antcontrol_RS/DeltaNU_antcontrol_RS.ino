@@ -37,8 +37,10 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol_RS. (Separate PCB for the Absolute Encoders):
-// 1.18 - [2023-03-19] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object)
-//            Return values respectively are: #auto_en, #auto_ds, #X, #X where X is the object number.
+// 1.18 - [2023-03-31] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object),
+//            !tle_upd (update satellite TLEs and Time via WiFi)       
+//            Return values respectively are: #auto_en, #auto_ds, #tle_upd, #X, #X where X is the object number. If the object is a Satellite, then return also the NORAD no. 
+//            Example when returning the SAT1: #2:07530
 // 1.17 - [2022-11-12] LCD display error fix when timeout of motors. tle_time_lcd() updated.
 // 1.16 - [2022-10-17] Setting Parking Position in the menu and store it in EEPROM.
 // 1.15 - [2022-10-11] Setting the Antenna AZ, EL min/max limits from the menu_A and storing the values in the EEPROM.
@@ -1083,6 +1085,11 @@ void command_basic(byte * basic_command_buffer, int basic_command_buffer_index, 
       return;
     }
     else if(strcmp(tempString, "!obj_inc") == 0) {   // '!obj_inc' command. Increase the object by one and return its value.
+      tracking_state = 0;   // Disable tracking
+      disable_autoTracking();
+      park_state[0] = 0;  // To avoid continuing to park position
+      park_state[1] = 0;  // To avoid continuing to park position
+      
       if (objectState >= maxObj) {   // If already in the last object go back to first
         objectState = 0;  // Go to first object (Sun)
       }
@@ -1093,17 +1100,34 @@ void command_basic(byte * basic_command_buffer, int basic_command_buffer_index, 
       strcpy(return_string,"#");
       sprintf(tempString, "%d", objectState);
       strcat(return_string,tempString);
+      if(objectState >= 2 && objectState <= 5) {    // If the objectState is a Satellite one add ":" + NORAD_No
+        strcat(return_string,":");
+        strcat(return_string,satID[objectState-2]);
+      }
       return;
     }
     else if(strcmp(tempString, "!obj_get") == 0) {   // '!obj_get' command. Return the value of the current object.
+      
       strcpy(return_string,"#");
       sprintf(tempString, "%d", objectState);
       strcat(return_string,tempString);
+      if(objectState >= 2 && objectState <= 5) {    // If the objectState is a Satellite one add ":" + NORAD_No
+        strcat(return_string,":");
+        strcat(return_string,satID[objectState-2]);
+      }
       return;
     }
-
+    else if(strcmp(tempString, "!tle_upd") == 0) {   // '!tle_upd' command. Send command to update TLEs and Time via WiFi
+      
+      disable_autoTracking();
+      tracking_state = 0;   // Disable tracking
+      park_state[0] = 0;  // To avoid continuing to park position
+      park_state[1] = 0;  // To avoid continuing to park position
+      fetchTLEandTime();
+      strcpy(return_string,"#tle_upd");
+      return;
+    }
   }
-  
 } // end of command_basic()
 
 
