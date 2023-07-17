@@ -37,6 +37,7 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol_RS. (Separate PCB for the Absolute Encoders):
+// 1.19 - [2023-07-04] Bugfix: In Menu_B the plus/minus buttons in the satellite Norad numbers did not work. 
 // 1.18 - [2023-03-31] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object),
 //            !tle_upd (update satellite TLEs and Time via WiFi)       
 //            Return values respectively are: #auto_en, #auto_ds, #tle_upd, #X, #X where X is the object number. If the object is a Satellite, then return also the NORAD no. 
@@ -134,7 +135,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 */
-#define CODE_VERSION "1.18"
+#define CODE_VERSION "1.19"
 
 #include <string.h>
 #include "FS.h"
@@ -5126,16 +5127,16 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
             case 2:   // satID2 setting
             case 3:   // satID3 setting
             case 4:   // satID4 setting
-              asciiNum = (int)tmp_satID[l_menuObj][blinkInd];
+              asciiNum = (int)tmp_satID[l_menuObj-1][blinkInd];
               switch(blinkInd) {
                 case 0:   // 1st alphanum range 0-9
                   asciiNum++; // go to next alphanumeric
                   if (asciiNum > 57) {    // If alphanum > 9, then go to 0
                      asciiNum = 48;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 1:   // 2nd alphanum range 0-9
@@ -5143,9 +5144,9 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                   if (asciiNum > 57) {    // If alphanum > 9, then go to 0
                      asciiNum = 48;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 2:   // 3rd alphanum range 0-9
@@ -5153,9 +5154,9 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                   if (asciiNum > 57) {    // If alphanum > 9, then go to 0
                      asciiNum = 48;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 3:   // 4th alphanum range 0-9
@@ -5163,9 +5164,9 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                   if (asciiNum > 57) {    // If alphanum > 9, then go to 0
                      asciiNum = 48;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 4th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 4th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 4:   // 5th alphanum range 0-9
@@ -5173,9 +5174,9 @@ void updateState_PlusButton(int l_plusButtonMode, int l_menuObj) {
                   if (asciiNum > 57) {    // If alphanum > 9, then go to 0
                      asciiNum = 48;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 5th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 5th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 default:
@@ -5836,16 +5837,16 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
             case 2:   // satID2 setting
             case 3:   // satID3 setting
             case 4:   // satID4 setting
-              asciiNum = (int)tmp_satID[l_menuObj][blinkInd];
+              asciiNum = (int)tmp_satID[l_menuObj-1][blinkInd];
               switch(blinkInd) {
                 case 0:   // 1st alphanum range 0-9
                   asciiNum--; // 1st alphanum range 0-9
                   if (asciiNum < 48) {    // If alphanum < 0, then go to 9
                      asciiNum = 57;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 1st digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 1:   // 2nd alphanum range 0-9
@@ -5853,9 +5854,9 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                   if (asciiNum < 48) {    // If alphanum < 0, then go to 9
                      asciiNum = 57;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 2nd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 2:   // 3rd alphanum range 0-9
@@ -5863,9 +5864,9 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                   if (asciiNum < 48) {    // If alphanum < 0, then go to 9
                      asciiNum = 57;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 3rd digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 3:   // 4th alphanum range 0-9
@@ -5873,9 +5874,9 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                   if (asciiNum < 48) {    // If alphanum < 0, then go to 9
                      asciiNum = 57;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 4th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 4th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 case 4:   // 5th alphanum range 0-9
@@ -5883,9 +5884,9 @@ void updateState_MinusButton(int l_minusButtonMode, int l_menuObj) {
                   if (asciiNum < 48) {    // If alphanum < 0, then go to 9
                      asciiNum = 57;
                   }
-                  tmp_satID[l_menuObj][blinkInd] = asciiNum;
+                  tmp_satID[l_menuObj-1][blinkInd] = asciiNum;
                   #ifdef DEBUG
-                    Serial.printf("Plus, 5th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj][blinkInd]);
+                    Serial.printf("Plus, 5th digit asciiNum is now [%d], char [%c]\n", asciiNum, tmp_satID[l_menuObj-1][blinkInd]);
                   #endif
                   break;
                 default:
