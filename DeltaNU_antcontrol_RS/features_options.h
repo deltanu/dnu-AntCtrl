@@ -82,6 +82,7 @@
 #define ANT_AZ_MIN 90
 #define ANT_EL_MAX 90
 #define ANT_EL_MIN 2
+#define SPEED_RDC_DEGREES 3
 
 #define TRACK_FREQ 30   // Set the default tracking frequency in seconds, can be updated via the MENU (how often the motors will update position)
 

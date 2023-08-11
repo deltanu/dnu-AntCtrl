@@ -37,6 +37,7 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol_RS. (Separate PCB for the Absolute Encoders):
+// 1.20 - [2023-08-10] Reduce speed of motors when distance of antenna from tracking object is less than 3 degrees.
 // 1.19 - [2023-07-04] Bugfix: In Menu_B the plus/minus buttons in the satellite Norad numbers did not work. 
 // 1.18 - [2023-03-31] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object),
 //            !tle_upd (update satellite TLEs and Time via WiFi)       
@@ -46,7 +47,7 @@
 // 1.16 - [2022-10-17] Setting Parking Position in the menu and store it in EEPROM.
 // 1.15 - [2022-10-11] Setting the Antenna AZ, EL min/max limits from the menu_A and storing the values in the EEPROM.
 // 1.14 - [2022-10-08] Setting the Band (Freq) via the 2nd menu and storing it in the EEPROM. The Band parameter is needed for calculating the doppler. 
-// 1.13	- [2022-10-07] Replacing library moon2 to moonLib and adding the functions MoonDop, geocentric, dot, toxyz and fromxyz so that the doppler can be calculated. 
+// 1.13  - [2022-10-07] Replacing library moon2 to moonLib and adding the functions MoonDop, geocentric, dot, toxyz and fromxyz so that the doppler can be calculated. 
 //          Replacing obsolete function getMoonPos() to getMoonPosAndDoppler() to show the self-doppler when the object is moon.
 // 1.12 - [2022-09-20] Track Accuracy extended to three choices. 0.1' , 0.5' or 1 degree.
 // 1.11 - [2022-08-25] Bug fix: If GPS is available call sat.site() function after fetching the gps latitude/longitude for updating the orbital satellite data. 
@@ -135,7 +136,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 */
-#define CODE_VERSION "1.19"
+#define CODE_VERSION "1.20"
 
 #include <string.h>
 #include "FS.h"
@@ -527,6 +528,9 @@ const int resolution = PWM_RESOLUTION;
 // int dutyCycleEl = DUTY_CYCLE;
 int dutyCycleAz = menuDutyCycle[indexDC];
 int dutyCycleEl = menuDutyCycle[indexDC];
+boolean reducedSpeedAZ = false;
+boolean reducedSpeedEL = false;
+const int speed_rdc_degrees = SPEED_RDC_DEGREES;
 
 const int ledPin = 2; // onboard LED connected to digital pin 2, used as a heartbeat
 
@@ -1882,25 +1886,56 @@ void func_track_object(float trackobj_azim, float trackobj_elev) {
       if(l_trackobjAzim < (int_antAzMax * trackAccuFactor[trackAccuInd]) && l_trackobjAzim > (int_antAzMin * trackAccuFactor[trackAccuInd])) {
         if(l_trackobjAzim < l_azIntAngle) {   // Move CCW (backward)
           statusTrackingObject[0] = 1; // Keep the current tracking period as active
+          if(l_azIntAngle - l_trackobjAzim < speed_rdc_degrees * trackAccuFactor[trackAccuInd]) {   // If antenna is less than 3 degrees away from object
+            reducedSpeedAZ = true;    // Set low speed flag for AZ.
+          }
+          else {
+            reducedSpeedAZ = false;
+          }
           if(moving_state[0] != 2) {    // if not moving already the same direction
             if(moving_state[0] == 1) {  // if already moving opposite (CW) direction
+              if(reducedSpeedAZ == true) {
+                Motor_Reduce_Speed(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz, LOW_DUTY_CYCLE);
+              }
               Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);  // Stop the motor first
             }
             Motor_backward(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);    // third param 0 for azimuth motor
           }
+          else {  // it is already moving to the same direction
+            if (reducedSpeedAZ == true) {
+              Motor_Reduce_Speed(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz, LOW_DUTY_CYCLE);
+            }   
+          }
         }
         else if((l_trackobjAzim > l_azIntAngle)) {   // Move CW (forward)
           statusTrackingObject[0] = 1; // Keep the current tracking period as active
+          if(l_trackobjAzim - l_azIntAngle < speed_rdc_degrees * trackAccuFactor[trackAccuInd]) {   // If antenna is less than 3 degrees away from object
+            reducedSpeedAZ = true;    // Set low speed flag for AZ.
+          }
+          else {
+            reducedSpeedAZ = false;
+          }
           if(moving_state[0] != 1) {        // if not moving already the same direction
             if(moving_state[0] == 2) {  // if already moving opposite (CCW) direction
+              if(reducedSpeedAZ == true) {
+                Motor_Reduce_Speed(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz, LOW_DUTY_CYCLE);
+              }
               Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);  // Stop the motor first
             }
             Motor_forward(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);    // third param 0 for azimuth motor
+          }
+          else {  // it is already moving to the same direction
+            if (reducedSpeedAZ == true) {
+              Motor_Reduce_Speed(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz, LOW_DUTY_CYCLE);
+            }   
           }
         }
         else if((l_trackobjAzim == l_azIntAngle)) {  // Reached object position
           statusTrackingObject[0] = 0; // Tracking done for this period
           if(moving_state[0] != 0) {    // If Motor is already moving
+            if(reducedSpeedAZ == true) {
+              Motor_Reduce_Speed(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz, LOW_DUTY_CYCLE);
+            }
             Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);  // Stop the motor
             park_state[0] = 0;  // Disable azimuth PARK
             #ifdef DEBUG
@@ -1940,7 +1975,7 @@ void func_track_object(float trackobj_azim, float trackobj_elev) {
 
   #if defined(ENABLE_ELEVATION)
     if (statusTrackingObject[1] != 0) {
-      // Track the azimuth
+      // Track the Elevation
       int l_elIntAngle;
       if (encoderFlagInd == 1) {
         l_elIntAngle = round(elg * trackAccuFactor[trackAccuInd]);    // Convert float to int
@@ -1958,25 +1993,56 @@ void func_track_object(float trackobj_azim, float trackobj_elev) {
       if(l_trackobjElev < (int_antElMax * trackAccuFactor[trackAccuInd]) && l_trackobjElev > (int_antElMin * trackAccuFactor[trackAccuInd])) {
         if(l_trackobjElev < l_elIntAngle) {   // Move Downwards
           statusTrackingObject[1] = 1; // Keep the current tracking period as active
+          if(l_elIntAngle - l_trackobjElev < speed_rdc_degrees * trackAccuFactor[trackAccuInd]) {   // If antenna is less than 3 degrees away from object
+            reducedSpeedEL = true;    // Set low speed flag for EL.
+          }
+          else {
+            reducedSpeedEL = false;
+          }
           if(moving_state[1] != 2) {    // if not moving already the same direction
             if(moving_state[1] == 1) {  // if already moving opposite (Upwards) direction
+              if(reducedSpeedEL == true) {
+                Motor_Reduce_Speed(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 0, pwmChanEl, &dutyCycleEl, LOW_DUTY_CYCLE);
+              }
               Motor_Soft_Stop(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);  // Stop the motor first
             }
             Motor_backward(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);    // third param 1 for elevation motor
           }
+          else {  // it is already moving to the same direction
+            if (reducedSpeedEL == true) {
+              Motor_Reduce_Speed(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 0, pwmChanEl, &dutyCycleEl, LOW_DUTY_CYCLE);
+            }   
+          }
         }
         else if((l_trackobjElev > l_elIntAngle)) {   // Move Upwards
           statusTrackingObject[1] = 1; // Keep the current tracking period as active
+          if(l_trackobjElev - l_elIntAngle < speed_rdc_degrees * trackAccuFactor[trackAccuInd]) {   // If antenna is less than 3 degrees away from object
+            reducedSpeedEL = true;    // Set low speed flag for EL.
+          }
+          else {
+            reducedSpeedEL = false;
+          }
           if(moving_state[1] != 1) {        // if not moving already the same direction
             if(moving_state[1] == 2) {  // if already moving opposite (Downwards) direction
+              if(reducedSpeedEL == true) {
+                Motor_Reduce_Speed(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 0, pwmChanEl, &dutyCycleEl, LOW_DUTY_CYCLE);
+              }
               Motor_Soft_Stop(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);  // Stop the motor first
             }
             Motor_forward(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);    // third param 1 for elevation motor
+          }
+          else {  // it is already moving to the same direction
+            if (reducedSpeedEL == true) {
+              Motor_Reduce_Speed(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 0, pwmChanEl, &dutyCycleEl, LOW_DUTY_CYCLE);
+            }   
           }
         }
         else if((l_trackobjElev == l_elIntAngle)) {  // Reached object position
           statusTrackingObject[1] = 0; // Tracking done for this period
           if(moving_state[1] != 0) {    // If Motor is already moving
+            if(reducedSpeedEL == true) {
+              Motor_Reduce_Speed(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 0, pwmChanEl, &dutyCycleEl, LOW_DUTY_CYCLE);
+            }
             Motor_Soft_Stop(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);  // Stop the motor
             park_state[1] = 0;  // Disable elevation PARK
             #ifdef DEBUG
@@ -2032,6 +2098,43 @@ void motor_init(int motor_pin1, int motor_pin2, int pwmCh) {
 
   // attach the channel to the pin2 to be controlled
   ledcAttachPin(motor_pin2, pwmCh);     // ATTENTION: This needs to be modified for an H-BRIDGE with PWM port
+}
+
+
+// *** Motor_Reduce_Speed function. 
+// m1 is the pin1 of DC motor, m2 is the pin2 of DC motor
+// az_el_ind sets the AZ (param 0) or the EL (param 1) moving_state
+void Motor_Reduce_Speed(int m1, int m2, int az_el_ind, int pwmCh, int *dutyCycle, int reducedCycle) {    // function of Motor_Reduce_Speed
+  #ifdef DEBUG
+    Serial.println("Reducing speed... ");
+    Serial.print("reducedCycle is: ");
+    Serial.println(reducedCycle);
+  #endif
+  if(moving_state[az_el_ind] == 1) { // if Motor is moving forward CW / Up
+    digitalWrite(m1, LOW);
+    digitalWrite(m2, HIGH);
+    while (*dutyCycle <= 255 && *dutyCycle > reducedCycle)  {
+      ledcWrite(pwmCh, *dutyCycle);   
+      *dutyCycle = *dutyCycle - 5;
+      // delay(100);
+      delay(20);
+    }
+  }
+  else if(moving_state[az_el_ind] == 2) { // if Motor is moving backward CCW / Down
+    digitalWrite(m1, HIGH);
+    digitalWrite(m2, HIGH);
+    while (*dutyCycle <= 255 && *dutyCycle > reducedCycle)  {
+      ledcWrite(pwmCh, *dutyCycle);   
+      *dutyCycle = *dutyCycle - 5;
+      // delay(100);
+      delay(20);
+    }
+  }
+ 
+  #ifdef DEBUG
+    Serial.print("Final dutyCycle is: ");
+    Serial.println(*dutyCycle);
+  #endif
 }
 
 
@@ -2140,7 +2243,12 @@ void Motor_forward(int m1, int m2, int az_el_ind, int pwmCh, int *dutCycl) {    
   #ifdef DEBUG
     Serial.printf(" Motor_forward, menuDutyCycle [%d] of index [%d]\n", menuDutyCycle[indexDC], indexDC);
   #endif
-  *dutCycl = menuDutyCycle[indexDC];
+  if((az_el_ind == 0 && reducedSpeedAZ == true) || (az_el_ind == 1 && reducedSpeedEL == true)) {
+    *dutCycl = LOW_DUTY_CYCLE;
+  }
+  else {
+    *dutCycl = menuDutyCycle[indexDC];
+  }
   ledcWrite(pwmCh, *dutCycl);
   // az_moving_state = 1;  // Az motor moving forward CW
   moving_state[az_el_ind] = 1;  // Motor moving forward CW / Up
@@ -2170,7 +2278,12 @@ void Motor_backward(int m1, int m2, int az_el_ind, int pwmCh, int *dutCycl) {   
   #ifdef DEBUG
     Serial.printf(" Motor_backward, menuDutyCycle[indexDC] is [%d]\n", menuDutyCycle[indexDC]);
   #endif
-  *dutCycl = menuDutyCycle[indexDC];  // for MD13S
+  if((az_el_ind == 0 && reducedSpeedAZ == true) || (az_el_ind == 1 && reducedSpeedEL == true)) {
+    *dutCycl = LOW_DUTY_CYCLE;
+  }
+  else {
+    *dutCycl = menuDutyCycle[indexDC];  // for MD13S
+  }
   ledcWrite(pwmCh, *dutCycl);
   // az_moving_state = 2;  // Az motor moving backward CCW
   moving_state[az_el_ind] = 2;  // Motor moving backward CCW / Down
@@ -2413,11 +2526,11 @@ void getMoonPosAndDoppler() {
   moon_elevation = ElMoon4;
   
   #ifdef DEBUG
-	  Serial.print("Band: ");
-	  Serial.print(freqBand[freqBandInd]);
-	  Serial.print(" , Doppler: ");
-	  Serial.println(Doppler);
-	  Serial.print(" Moon AzMoon4 angle: ");
+    Serial.print("Band: ");
+    Serial.print(freqBand[freqBandInd]);
+    Serial.print(" , Doppler: ");
+    Serial.println(Doppler);
+    Serial.print(" Moon AzMoon4 angle: ");
     Serial.print(AzMoon4);  
     Serial.println();
     Serial.print(" Moon ElMoon4: ");
