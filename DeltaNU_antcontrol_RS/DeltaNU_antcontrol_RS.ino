@@ -37,6 +37,8 @@
 // =============================
 //
 // Revision History of DeltaNU_antcontrol_RS. (Separate PCB for the Absolute Encoders):
+// 1.21 - [2023-08-18] If obj_inc or auto_ds serial commands are sent to the controller, and if a GOTO command is already ongoing, then disable the GOTO. 
+//            Updated the function disable_autoTracking().
 // 1.20 - [2023-08-10] Reduce speed of motors when distance of antenna from tracking object is less than 3 degrees.
 // 1.19 - [2023-07-04] Bugfix: In Menu_B the plus/minus buttons in the satellite Norad numbers did not work. 
 // 1.18 - [2023-03-31] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object),
@@ -125,7 +127,7 @@
 // 0.14 - When auto tracking, show the -> or -< for azimuth, ^ or v for elevation
 // 0.13 - Tracking function updated to include elevation, too. 
 // 0.12 - Adding Elevation control. (PARK done, pending tracking function update and OLED display update)
-// 0.11 - Update function func_track_object to track in periods of X seconds (TRACK_FREQ parameter). 
+// 0.11 - Update function func_track_object to track goin periods of X seconds (TRACK_FREQ parameter). 
 // 0.10 - Added function func_track_object for antenna tracking of object (currently only the Azimuth). Added Antenna Azimuth and Elevetion LIMITS in features_options.h
 //        Temporary: Start tracking by serial command "a". Stop tracking by "s". 
 //        Added option for reverse turning of encoders HH-12 (Az and/or El)
@@ -136,7 +138,7 @@
 //        Grid square is used for calculating object position. If Grid square is invalid then the default coords are used.
 // ##############
 */
-#define CODE_VERSION "1.20"
+#define CODE_VERSION "1.21"
 
 #include <string.h>
 #include "FS.h"
@@ -865,12 +867,14 @@ void disable_autoTracking() {
   #if defined(ENABLE_AZIMUTH)
     if(moving_state[0] != 0) { // If azimuth Motor is already moving
       Motor_Soft_Stop(MOTOR_AZ1_PIN, MOTOR_AZ2_PIN, 0, pwmChanAz, &dutyCycleAz);  // Stop Azimuth motor
-    }  
+    }
+    goto_state[0] = 0;
   #endif
   #if defined(ENABLE_ELEVATION)
     if(moving_state[1] != 0) { // If elevation Motor is already moving
       Motor_Soft_Stop(MOTOR_EL1_PIN, MOTOR_EL2_PIN, 1, pwmChanEl, &dutyCycleEl);  // Stop Elevation motor
     }
+    goto_state[1] = 0;
   #endif
 }
 
