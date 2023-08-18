@@ -39,7 +39,7 @@
 // Revision History of DeltaNU_antcontrol_RS. (Separate PCB for the Absolute Encoders):
 // 1.21 - [2023-08-18] If obj_inc or auto_ds serial commands are sent to the controller, and if a GOTO command is already ongoing, then disable the GOTO. 
 //            Updated the function disable_autoTracking().
-// 1.20 - [2023-08-10] Reduce speed of motors when distance of antenna from tracking object is less than 3 degrees.
+// 1.20 - [2023-08-10] Reduce speed of motors when distance of antenna from tracking object is less than 3 degrees (SPEED_RDC_DEGREES in features_options.h)
 // 1.19 - [2023-07-04] Bugfix: In Menu_B the plus/minus buttons in the satellite Norad numbers did not work. 
 // 1.18 - [2023-03-31] Added serial commands !auto_en (enable auto tracking), !auto_ds (disable auto tracking), !obj_inc (go to next object), !obj_get (return the current object),
 //            !tle_upd (update satellite TLEs and Time via WiFi)       
